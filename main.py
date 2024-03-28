@@ -105,29 +105,33 @@ def InputIP():
             writeIP = csv.writer(configFile)
             writeIP.writerow(record)
         mainIP = stringIP
-        chooseIP.grab_release()
-        chooseIP.destroy()
+        screenIP.grab_release()
+        screenIP.destroy()
         CheckIP()
-    chooseIP = Toplevel(root)
-    chooseIP.title("Введите IP")
-    chooseIP.geometry("300x150")
+    def Mask(ip):
+        validIP = re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ip)
+        buttonStart["state"] = "normal" if validIP is not None else "disabled"
+        return True
+    screenIP = Toplevel(root)
+    screenIP.title("Введите IP")
+    screenIP.geometry("300x150")
     rootPosX = root.winfo_rootx() + 250
     rootPosY = root.winfo_rooty() + 350
-    chooseIP.wm_geometry("+%d+%d" % (rootPosX, rootPosY))
-    chooseIP.resizable(False, False)
-    chooseIP.grab_set()
-    chooseIP.protocol("WM_DELETE_WINDOW", sys.exit)
+    screenIP.wm_geometry("+%d+%d" % (rootPosX, rootPosY))
+    screenIP.resizable(False, False)
+    screenIP.grab_set()
+    screenIP.protocol("WM_DELETE_WINDOW", sys.exit)
     iconIP = PhotoImage(file=f"{rootFolder}icon.png")
-    chooseIP.iconphoto(False, iconIP)
-    labelIP = tkinter.Label(master=chooseIP, text="Введите IP адрес климатической установки:")
+    screenIP.iconphoto(False, iconIP)
+    labelIP = tkinter.Label(master=screenIP, text="Введите IP адрес климатической установки:")
     labelIP.place(x=10, y=30, width=280)
-    # checkIP = (inputIP.register(IsValid), "%P")
-    # entryIP = tkinter.Entry(master=inputIP, relief="solid", justify="center", validate="key", validatecommand=checkIP)
-    entryIP = tkinter.Entry(master=chooseIP, relief="solid", justify="center")
+    isvalid = (screenIP.register(Mask), "%P")
+    entryIP = tkinter.Entry(master=screenIP, relief="solid", justify="center",
+                            validate="key", validatecommand=isvalid)
     entryIP.place(x=10, y=50, width=280)
-    buttonIP = tkinter.Button(master=chooseIP, text="Начать опрос", command=GetIP)
-    buttonIP.place(x=10, y=80, width=280)
-    buttonClose = tkinter.Button(master=chooseIP, text="Закрыть программу", command=sys.exit)
+    buttonStart = tkinter.Button(master=screenIP, text="Начать опрос", command=GetIP, state="disabled")
+    buttonStart.place(x=10, y=80, width=280)
+    buttonClose = tkinter.Button(master=screenIP, text="Закрыть программу", command=sys.exit)
     buttonClose.place(x=10, y=110, width=280)
 
 
@@ -339,31 +343,6 @@ def Plot():
     root.after(5000, Plot)
 
 
-
-
-
-# def IsValid(ip):
-#     return re.search(r"\d{,3}\D", ip) is not None
-
-
-# def TOE():
-    # toe = tkinter.messagebox.askyesnocancel(title="Предупреждение", message=f"Ошибка связи.\nПовтор через:\n{cd}")
-    # Countdown()
-#
-#     if toe:
-#         print()
-#         # InputIP()
-#     else:
-#         sys.exit()
-
-
-# def Countdown(cd: int):
-#     if cd == 0:
-#         return
-#     cd -= 1
-#     root.after(1000, Countdown)
-
-
 root = Tk()
 root.title("Модуль удалённого контроля климатической камеры")
 root.geometry("800x800")
@@ -404,13 +383,6 @@ labelPeriods = Label(anchor="w", fg=fg, bg=bg)
 
 figure = Figure(figsize=(7.8, 4.9), dpi=100, facecolor="black")
 canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
-
-# configPath = f"{rootFolder}config.ini"
-# frameIP = pandas.read_csv(configPath, sep=",")
-# if frameIP.empty:
-#     InputIP()
-# else:
-#     mainIP = frameIP.iloc[-1]["ip"]
 
 ObjectsPlace()
 GetLocalIP()

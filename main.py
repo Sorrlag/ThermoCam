@@ -9,6 +9,7 @@ import tkinter
 import tkinter.messagebox
 from tkinter import *
 from tkinter import ttk
+from PIL import Image, ImageTk
 import tkcalendar
 import re
 from datetime import datetime
@@ -20,9 +21,9 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import pandas
 
-xLabelPos, xValuePos, yPos = 20, 220, 100
+xLabelPos, xValuePos, yPos = 10, 180, 100
 localIP, panelIP, panelDate, panelTime, currentTime, filename, picname = "", "", "", "", "", "", ""
-fg, fgv, bg = "white", "yellow", "black"
+fgComm, fgVal, bgGlob, bgLoc = "white", "yellow", "#2B0542", "#510D70"
 status = ("НЕТ СВЯЗИ", "АВАРИЯ", "РАБОТА", "ОСТАНОВ")
 mode = ("НЕТ СВЯЗИ", "НАСТРОЙКА", "ТЕРМО", "ВЛАГА")
 statusIndex, modeIndex = 0, 0
@@ -38,24 +39,32 @@ mainIP = ""
 
 
 def ObjectsPlace():
-    logoLabel.place(x=450, y=780)
+    logoLabel.place(x=650, y=780)
+    panelDateLabel.place(x=880, y=15, width=100)
+    panelTimeLabel.place(x=880, y=35, width=100)
     armIPLabel.place(x=xLabelPos, y=15)
     panelIPLabel.place(x=xLabelPos, y=35)
-    panelDateLabel.place(x=650, y=15, width=100)
-    panelTimeLabel.place(x=650, y=35, width=100)
-    statusLabel.place(x=xLabelPos, y=yPos, width=200)
-    statusValue.place(x=xValuePos, y=yPos, width=150)
-    modeLabel.place(x=xLabelPos, y=yPos + 20, width=200)
-    modeValue.place(x=xValuePos, y=yPos + 20, width=150)
-    tempCurLabel.place(x=xLabelPos, y=yPos + 40, width=200)
-    tempCurValue.place(x=xValuePos, y=yPos + 40, width=150)
-    tempSetLabel.place(x=xLabelPos, y=yPos + 60, width=200)
-    tempSetValue.place(x=xValuePos, y=yPos + 60, width=150)
-    humCurLabel.place(x=xLabelPos, y=yPos + 80, width=200)
-    humCurValue.place(x=xValuePos, y=yPos + 80, width=150)
-    humSetLabel.place(x=xLabelPos, y=yPos + 100, width=200)
-    humSetValue.place(x=xValuePos, y=yPos + 100, width=150)
-    labelPeriods.place(x=410, y=90)
+    statusLabel.place(x=xLabelPos, y=yPos, width=150)
+    statusValue.place(x=xValuePos, y=yPos, width=100)
+    modeLabel.place(x=xLabelPos, y=yPos + 20, width=150)
+    modeValue.place(x=xValuePos, y=yPos + 20, width=100)
+    tempCurLabel.place(x=xLabelPos, y=yPos + 50, width=150)
+    tempCurValue.place(x=xValuePos, y=yPos + 50, width=100)
+    tempSetLabel.place(x=xLabelPos, y=yPos + 70, width=150)
+    tempSetValue.place(x=xValuePos, y=yPos + 70, width=100)
+    humCurLabel.place(x=xLabelPos, y=yPos + 100, width=150)
+    humCurValue.place(x=xValuePos, y=yPos + 100, width=100)
+    humSetLabel.place(x=xLabelPos, y=yPos + 120, width=150)
+    humSetValue.place(x=xValuePos, y=yPos + 120, width=100)
+    labelPeriods.place(x=670, y=90)
+    labelNotif.place(x=670, y=120)
+    heaterStatLabel.place(x=480, y=90, width=120)
+    coolerStatLabel.place(x=480, y=90+25-2, width=120)
+    valveStatLabel.place(x=480, y=90+50-4, width=120)
+    dehydratorStatLabel.place(x=480, y=90+75-6, width=120)
+    generatorStatLabel.place(x=480, y=90+100-8, width=120)
+    pumpStatLabel.place(x=480, y=90+125-10, width=120)
+    fanStatLabel.place(x=480, y=90+150-12, width=120)
 
 
 def LabelsShow():
@@ -77,7 +86,15 @@ def LabelsShow():
     humSetLabel["text"] = f"Уставка по влажности:"
     humSetValue["text"] = f"{humiditySet} °C"
     labelPeriods["text"] = "Диапазон отображения:"
-    buttonSave["text"] = f"Сохранить график в {picFolder}"
+    buttonSave["text"] = f"Сохранить график"
+    labelNotif["text"] = "Ошибка чтения данных из указанного диапазона..."
+    heaterStatLabel["text"] = "Нагреватель"
+    coolerStatLabel["text"] = "Охладитель"
+    valveStatLabel["text"] = "Клапан"
+    dehydratorStatLabel["text"] = "Осушитель"
+    generatorStatLabel["text"] = "Парогенератор"
+    pumpStatLabel["text"] = "Помпа"
+    fanStatLabel["text"] = "Вентилятор"
 
     root.after(1000, LabelsShow)
 
@@ -85,11 +102,12 @@ def LabelsShow():
 def GraphControl():
     global graphLabels, graphPeriods, graphDefault
     graphLabels = ["1 минута", "5 минут", "15 минут", "30 минут", "1 час", "2 часа", "Настраиваемый..."]
-    graphPeriods = ["00:01:00", "00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "24:01:00"]
+    graphPeriods = ["00:01:00", "00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "08:00:00"]
     graphDefault = StringVar(value=graphLabels[0])
-    graphPeriod = ttk.Combobox(values=graphLabels, textvariable=graphDefault, width=20, state="readonly")
-    graphPeriod.place(x=570, y=90)
-    buttonSave.place(x=410, y=210, width=280)
+    graphPeriod = ttk.Combobox(values=graphLabels, textvariable=graphDefault, width=20, state="readonly",
+                               background=bgLoc, foreground=bgLoc)
+    graphPeriod.place(x=830, y=90)
+    buttonSave.place(x=670, y=210, width=280)
 
 
 def GetLocalIP():
@@ -254,7 +272,7 @@ def ReadModbusTCP():
         return
     except ConnectionRefusedError:
         print("Modbus read error")
-    root.after(1000, ReadModbusTCP)
+    root.after(2000, ReadModbusTCP)
 
 
 def FTPhistory():
@@ -326,11 +344,11 @@ def Plot():
         timeNow = datetime.strptime(currentTime, "%H:%M:%S")
         timeDif = datetime.strptime(choiceTime, "%H:%M:%S")
         timeBegin = str(timeNow - timeDif)
-        print(timeNow.time())
         frameData = pandas.read_csv(filePath, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
         frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
         frameCurrent = frameData.loc[frameData["Time"] >= timeBegin, frameColumns]
-        print(frameCurrent)
+        print("Normal reading data")
+        print(timeBegin)
     except ValueError:
         print("Time read error")
         filePathPrev = csvFolder + ''.join(fileList[-2])
@@ -340,21 +358,22 @@ def Plot():
         frameDataNow = pandas.read_csv(filePath, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
         frameCurrentNow = frameDataPrev.loc[((frameDataNow["Time"] >= "00:00:00") & (frameDataNow["Time"] <= "02:00:00")), frameColumns]
         frameCurrent = pandas.concat([frameCurrentPrev, frameCurrentNow], ignore_index=True)
-        print(frameCurrent)
+        # print(f"{filePathPrev}:{frameCurrentPrev}, {filePath}:{frameCurrentNow}")
+        print(filePathPrev)
     except FileNotFoundError:
         print("File not found")
         return
     except UnboundLocalError:
         print("Time format error")
     figure.clear()
-    lox = matplotlib.ticker.LinearLocator(18)
+    lox = matplotlib.ticker.LinearLocator(24)
     graphTemp = figure.add_subplot(111)
     graphTemp.xaxis.set_major_locator(lox)
-    graphTemp.set_facecolor("black")
+    graphTemp.set_facecolor(bgLoc)
     try:
-        graphTemp.plot(frameCurrent["Time"], frameCurrent["TemperatureCurrent"], "-b",
+        graphTemp.plot(frameCurrent["Time"], frameCurrent["TemperatureCurrent"], "-w",
                             frameCurrent["Time"], frameCurrent["TemperatureSet"], "--c")
-        graphTemp.set_ylabel("Температура, °C", color="blue")
+        graphTemp.set_ylabel("Температура, °C", color="white")
         graphTemp.grid(alpha=0.5, linestyle="-", color="cyan", linewidth=0.3)
         graphTemp.tick_params(labelsize=8, colors="yellow")
         if modeIndex == 2:
@@ -373,9 +392,12 @@ def Plot():
         print("Plot error")
     except TypeError:
         print("Error read data. Need to restart")
+        labelNotif["fg"] = "red"
+    else:
+        labelNotif["fg"] = bgLoc
     figure.autofmt_xdate()
     canvasGraph.draw()
-    canvasGraph.get_tk_widget().place(x=10, y=250)
+    canvasGraph.get_tk_widget().place(x=20, y=290)
 
     root.after(5000, Plot)
 
@@ -385,47 +407,137 @@ def SaveFigure():
     figure.savefig(f"{picFolder}{picname}")
 
 
+def UpdateHeat(index):
+    framePic = framesHeat[index]
+    index += 1
+    if index == 14:
+        index = 0
+    heatLabel.configure(image=framePic, borderwidth=0)
+    root.after(50, UpdateHeat, index)
+
+
+def UpdateCold(index):
+    framePic = framesCold[index]
+    index += 1
+    if index == 10:
+        index = 0
+    coldLabel.configure(image=framePic, borderwidth=0)
+    root.after(100, UpdateCold, index)
+
+
+def UpdateWet(index):
+    framePic = framesWet[index]
+    index += 1
+    if index == 12:
+        index = 0
+    wetLabel.configure(image=framePic, borderwidth=0)
+    root.after(100, UpdateWet, index)
+
+
+def UpdateDry(index):
+    framePic = framesDry[index]
+    index += 1
+    if index == 10:
+        index = 0
+    dryLabel.configure(image=framePic, borderwidth=0)
+    root.after(100, UpdateDry, index)
+
+
+def UpdateIdleTemp(index):
+    framePic = framesIdle[index]
+    index += 1
+    if index == 12:
+        index = 0
+    idleTempLabel.configure(image=framePic, borderwidth=0)
+    root.after(100, UpdateIdleTemp, index)
+
+
+def UpdateIdleHum(index):
+    framePic = framesIdle[index]
+    index += 1
+    if index == 12:
+        index = 0
+    idleHumLabel.configure(image=framePic, borderwidth=0)
+    root.after(100, UpdateIdleHum, index)
+
+
 root = Tk()
 root.title("Модуль удалённого контроля климатической камеры")
-root.geometry("800x800")
+root.geometry("1000x800")
 root.wm_geometry("+%d+%d" % (100, 100))
-root["bg"] = bg
+root["bg"] = bgGlob
 root.resizable(False, False)
 icon = PhotoImage(file=f"{rootFolder}icon.png")
 root.iconphoto(False, icon)
 
-canvasStat = Canvas(width=390, height=150, bg="yellow", relief="raised")
-canvasStat.place(x=0, y=80)
-canvasStat.create_rectangle(10, 10, 390, 150, fill=bg)
-canvasBut = Canvas(width=396, height=160, bg=bg)
-canvasBut.place(x=400, y=80)
-canvasBut.create_rectangle(10, 10, 396, 160, fill=bg)
-canvasPlot = Canvas(width=796, height=500, bg=bg)
-canvasPlot.place(x=0, y=240)
-canvasPlot.create_rectangle(10, 10, 780, 300, fill=bg)
+canvas = Canvas(width=998, height=698, bg=bgGlob, highlightthickness=1, highlightbackground=bgGlob)
+canvas.place(x=0, y=80)
+canvas.create_rectangle(18, 8, 308, 188, fill="#352642", outline="#241C2B")
+canvas.create_rectangle(10, 0, 300, 180, fill="#510D70", outline="#510D70")
+canvas.create_rectangle(338, 8, 638, 188, fill="#352642", outline="#241C2B")
+canvas.create_rectangle(330, 0, 630, 180, fill="#510D70", outline="#510D70")
+canvas.create_rectangle(668, 8, 988, 188, fill="#352642", outline="#241C2B")
+canvas.create_rectangle(660, 0, 980, 180, fill="#510D70", outline="#510D70")
+canvas.create_rectangle(18, 208, 988, 698, fill="#352642", outline="#241C2B")
+canvas.create_rectangle(10, 200, 980, 690, fill="#510D70", outline="#510D70")
 
-logoLabel = Label(font=("Arial", 10, "bold"), fg=fg, bg=bg)
-armIPLabel = Label(fg=fg, bg=bg)
-panelIPLabel = Label(fg=fg, bg=bg)
-panelDateLabel = Label(fg=fg, bg=bg, anchor="e")
-panelTimeLabel = Label(fg=fg, bg=bg, anchor="e")
-statusLabel = Label(anchor="e", fg=fg, bg=bg)
-statusValue = Label(fg=fgv, bg=bg)
-modeLabel = Label(anchor="e", fg=fg, bg=bg)
-modeValue = Label(fg=fgv, bg=bg)
-tempCurLabel = Label(anchor="e", fg=fg, bg=bg)
-tempCurValue = Label(fg=fgv, bg=bg)
-tempSetLabel = Label(anchor="e", fg=fg, bg=bg)
-tempSetValue = Label(fg=fgv, bg=bg)
-humCurLabel = Label(anchor="e", fg=fg, bg=bg)
-humCurValue = Label(fg=fgv, bg=bg)
-humSetLabel = Label(anchor="e", fg=fg, bg=bg)
-humSetValue = Label(fg=fgv, bg=bg)
-labelPeriods = Label(anchor="w", fg=fg, bg=bg)
+framesHeat = [PhotoImage(file=f"{rootFolder}Icons\\heat.gif", format="gif -index %i" %(i)) for i in range(15)]
+framesCold = [PhotoImage(file=f"{rootFolder}Icons\\cold.gif", format="gif -index %i" %(i)) for i in range(10)]
+framesWet = [PhotoImage(file=f"{rootFolder}Icons\\wet.gif", format="gif -index %i" %(i)) for i in range(12)]
+framesDry = [PhotoImage(file=f"{rootFolder}Icons\\dry.gif", format="gif -index %i" %(i)) for i in range(10)]
+framesIdle = [PhotoImage(file=f"{rootFolder}Icons\\idle.gif", format="gif -index %i" %(i)) for i in range(12)]
+heatLabel = tkinter.Label(root)
+coldLabel = tkinter.Label(root)
+wetLabel = tkinter.Label(root)
+dryLabel = tkinter.Label(root)
+idleTempLabel = tkinter.Label(root)
+idleHumLabel = tkinter.Label(root)
+heatLabel.place(x=360, y=90)
+# coldLabel.place(x=440, y=90)
+# idleTempLabel.place(x=540, y=90)
+wetLabel.place(x=360, y=180)
+# dryLabel.place(x=440, y=180)
+# idleHumLabel.place(x=540, y=180)
+root.after(0, UpdateHeat, 0)
+# root.after(0, UpdateCold, 0)
+root.after(0, UpdateWet, 0)
+# root.after(0, UpdateDry, 0)
+# root.after(0, UpdateIdleTemp, 0)
+# root.after(0, UpdateIdleHum, 0)
 
-figure = Figure(figsize=(7.8, 4.9), dpi=100, facecolor="black")
+heaterStatLabel = Label(fg="dim gray", bg=bgGlob)
+coolerStatLabel = Label(fg="dim gray", bg=bgGlob)
+valveStatLabel = Label(fg="dim gray", bg=bgGlob)
+dehydratorStatLabel = Label(fg="dim gray", bg=bgGlob)
+generatorStatLabel = Label(fg="dim gray", bg=bgGlob)
+pumpStatLabel = Label(fg="dim gray", bg=bgGlob)
+fanStatLabel = Label(fg="white", bg="green")
+
+logoLabel = Label(font=("Arial", 10, "bold"), fg=fgComm, bg=bgGlob)
+armIPLabel = Label(fg=fgComm, bg=bgGlob)
+panelIPLabel = Label(fg=fgComm, bg=bgGlob)
+panelDateLabel = Label(fg=fgComm, bg=bgGlob, anchor="e")
+panelTimeLabel = Label(fg=fgComm, bg=bgGlob, anchor="e")
+statusLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+statusValue = Label(fg=fgVal, bg=bgLoc)
+modeLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+modeValue = Label(fg=fgVal, bg=bgLoc)
+tempCurLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+tempCurValue = Label(fg=fgVal, bg=bgLoc)
+tempSetLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+tempSetValue = Label(fg=fgVal, bg=bgLoc)
+humCurLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+humCurValue = Label(fg=fgVal, bg=bgLoc)
+humSetLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+humSetValue = Label(fg=fgVal, bg=bgLoc)
+labelPeriods = Label(anchor="w", fg=fgComm, bg=bgLoc)
+labelNotif = Label(anchor="w", fg=bgLoc, bg=bgLoc)
+
+figure = Figure(figsize=(9.5, 4.7), dpi=100, facecolor=bgLoc)
 canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
-buttonSave = ttk.Button(command=SaveFigure)
+view = ttk.Style().configure("TButton", background=bgLoc, foreground=bgLoc, color=bgLoc)
+ttk.Style().configure("C.TButton", foreground=bgLoc, background="black", padding=4)
+buttonSave = ttk.Button(command=SaveFigure, style=view)
 
 ObjectsPlace()
 GetLocalIP()

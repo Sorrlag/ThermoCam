@@ -5,11 +5,11 @@ import os
 import ftplib
 import sys
 import time
+import threading
 import tkinter
 import tkinter.messagebox
 from tkinter import *
 from tkinter import ttk
-from PIL import Image, ImageTk
 import tkcalendar
 import re
 from datetime import datetime
@@ -21,7 +21,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import pandas
 
-xLabelPos, xValuePos, yPos = 10, 180, 100
+xLabelPos, xValuePos, yPos = 20, 190, 100
 localIP, panelIP, panelDate, panelTime, currentTime, filename, picname = "", "", "", "", "", "", ""
 fgComm, fgVal, bgGlob, bgLoc = "white", "yellow", "#2B0542", "#510D70"
 status = ("НЕТ СВЯЗИ", "АВАРИЯ", "РАБОТА", "ОСТАНОВ")
@@ -35,15 +35,16 @@ converter = f"{rootFolder}Converter\\easyсonverter.exe"
 dtlFolder = f"{rootFolder}Converter\\data\\"
 csvFolder = f"{rootFolder}\\CSV\\"
 xlsFolder = f"{rootFolder}\\XLS\\"
-mainIP = ""
+machineIP, machineName = "", ""
 
 
 def ObjectsPlace():
     logoLabel.place(x=650, y=780)
     panelDateLabel.place(x=880, y=15, width=100)
     panelTimeLabel.place(x=880, y=35, width=100)
-    armIPLabel.place(x=xLabelPos, y=15)
-    panelIPLabel.place(x=xLabelPos, y=35)
+    armIPLabel.place(x=xLabelPos, y=10)
+    panelIPLabel.place(x=xLabelPos, y=30)
+    panelNameLabel.place(x=xLabelPos, y=50)
     statusLabel.place(x=xLabelPos, y=yPos, width=150)
     statusValue.place(x=xValuePos, y=yPos, width=100)
     modeLabel.place(x=xLabelPos, y=yPos + 20, width=150)
@@ -58,19 +59,13 @@ def ObjectsPlace():
     humSetValue.place(x=xValuePos, y=yPos + 120, width=100)
     labelPeriods.place(x=670, y=90)
     labelNotif.place(x=670, y=120)
-    heaterStatLabel.place(x=480, y=90, width=120)
-    coolerStatLabel.place(x=480, y=90+25-2, width=120)
-    valveStatLabel.place(x=480, y=90+50-4, width=120)
-    dehydratorStatLabel.place(x=480, y=90+75-6, width=120)
-    generatorStatLabel.place(x=480, y=90+100-8, width=120)
-    pumpStatLabel.place(x=480, y=90+125-10, width=120)
-    fanStatLabel.place(x=480, y=90+150-12, width=120)
 
 
 def LabelsShow():
     logoLabel["text"] = f"© 'МИР ОБОРУДОВАНИЯ', Санкт-Петербург, 2024"
     armIPLabel["text"] = f"IP адрес рабочей станции: {localIP}"
     panelIPLabel["text"] = f'IP адрес климатической установки: {panelIP}'
+    panelNameLabel["text"] = f'Наименование: {machineName}'
     panelDateLabel["text"] = panelDate
     panelTimeLabel["text"] = panelTime
     statusLabel["text"] = f"Статус установки:"
@@ -86,16 +81,7 @@ def LabelsShow():
     humSetLabel["text"] = f"Уставка по влажности:"
     humSetValue["text"] = f"{humiditySet} °C"
     labelPeriods["text"] = "Диапазон отображения:"
-    buttonSave["text"] = f"Сохранить график"
     labelNotif["text"] = "Ошибка чтения данных из указанного диапазона..."
-    heaterStatLabel["text"] = "Нагреватель"
-    coolerStatLabel["text"] = "Охладитель"
-    valveStatLabel["text"] = "Клапан"
-    dehydratorStatLabel["text"] = "Осушитель"
-    generatorStatLabel["text"] = "Парогенератор"
-    pumpStatLabel["text"] = "Помпа"
-    fanStatLabel["text"] = "Вентилятор"
-
     root.after(1000, LabelsShow)
 
 
@@ -108,6 +94,7 @@ def GraphControl():
                                background=bgLoc, foreground=bgLoc)
     graphPeriod.place(x=830, y=90)
     buttonSave.place(x=670, y=210, width=280)
+    buttonName.place(x=400, y=10, width=200)
 
 
 def GetLocalIP():
@@ -118,14 +105,14 @@ def GetLocalIP():
 
 def InputIP():
     def GetIP():
-        global mainIP
+        global machineIP
         stringIP = entryIP.get()
-        record = [stringIP, "N"]
+        record = [stringIP, "Климатическая установка"]
         configPath = f"{rootFolder}config.ini"
         with open(configPath, mode="a", newline="") as configFile:
             writeIP = csv.writer(configFile)
             writeIP.writerow(record)
-        mainIP = stringIP
+        machineIP = stringIP
         screenIP.grab_release()
         screenIP.destroy()
         CheckIP()
@@ -142,7 +129,7 @@ def InputIP():
     screenIP.resizable(False, False)
     screenIP.grab_set()
     screenIP.protocol("WM_DELETE_WINDOW", sys.exit)
-    iconIP = PhotoImage(file=f"{rootFolder}icon.png")
+    iconIP = PhotoImage(file="icons\\icon.png")
     screenIP.iconphoto(False, iconIP)
     labelIP = tkinter.Label(master=screenIP, text="Введите IP адрес климатической установки:")
     labelIP.place(x=10, y=30, width=280)
@@ -157,31 +144,49 @@ def InputIP():
 
 
 def CheckIP():
-    global mainIP
+    global machineIP, machineName
     configPath = f"{rootFolder}config.ini"
-    frameIP = pandas.read_csv(configPath, sep=",")
+    frameIP = pandas.read_csv(configPath, sep=",", encoding="cp1251")
     if frameIP.empty:
         InputIP()
     else:
-        mainIP = frameIP.iloc[-1]["ip"]
+        machineIP = frameIP.iloc[-1]["ip"]
+        machineName = frameIP.iloc[-1]["name"]
         OpenConnection()
 
 
+def DeleteButton():
+    # buttonName.destroy()
+    raise Exception("Abort")
+
+
+def ShowGif():
+    global heatLabel
+    heatLabel = tkinter.Label(root)
+    heatLabel.place(x=340, y=90)
+    UpdateHeat()
+
+
+def HideGif():
+    global heatLabel
+    heatLabel.destroy()
+
+
 def OpenConnection():
-    global mainIP, master, ftp, fileList, csvFolder, xlsFolder
+    global machineIP, master, ftp, fileList, csvFolder, xlsFolder
     try:
-        master = modbus_tcp.TcpMaster(host=mainIP, port=502, timeout_in_sec=5)
+        master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=5)
         master.set_timeout(5.0)
     except TimeoutError:
         ConnectionError()
         return
     try:
-        ftp = ftplib.FTP(host=mainIP, timeout=5)
+        ftp = ftplib.FTP(host=machineIP, timeout=5)
         ftp.login(user="uploadhis", passwd="111111")
         ftp.cwd("datalog/data")
         fileList = ftp.nlst()
-        csvFolder = f"{rootFolder}{mainIP}\\CSV\\"
-        xlsFolder = f"{rootFolder}{mainIP}\\XLS\\"
+        csvFolder = f"{rootFolder}{machineIP}\\CSV\\"
+        xlsFolder = f"{rootFolder}{machineIP}\\XLS\\"
     except TimeoutError:
         ConnectionError()
         return
@@ -190,12 +195,12 @@ def OpenConnection():
         return
     except ftplib.error_perm:
         print("Error open FTP")
-    ReadModbusTCP()
+    threadModbus.start()
     LabelsShow()
     GraphControl()
     FTPhistory()
     CSVhistory()
-    CurrentUpdate()
+    threadFTP.start()
     Plot()
 
 
@@ -228,7 +233,7 @@ def ConnectionError():
     screenError.grab_set()
     screenError["bg"] = "yellow"
     screenError.protocol("WM_DELETE_WINDOW", sys.exit)
-    screenIcon = PhotoImage(file=f"{rootFolder}icon.png")
+    screenIcon = PhotoImage(file="icons\\icon.png")
     screenError.iconphoto(False, screenIcon)
 
     info = tkinter.Label(master=screenError, bg="yellow")
@@ -245,34 +250,35 @@ def ConnectionError():
 def ReadModbusTCP():
     global panelIP, panelDate, panelTime, currentTime, filename, picname, \
         temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, modeIndex, statusIndex
-    try:
-        getSys = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10099, 10)
-        getTempCur = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10109, 1)
-        getTempSet = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10110, 1)
-        getHumCur = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10111, 1)
-        getHumSet = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10112, 1)
-        getStatus = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10115, 1)
-        getMode = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10114, 1)
-        panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
-        panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
-        panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
-        currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
-        filename = f"{getSys[6]:04}{getSys[5]:02}{getSys[4]:02}"
-        picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
-        temperatureCurrent = (getTempCur[0] - 2 ** 16) / 10 if getTempCur[0] > 2 ** 15 else getTempCur[0] / 10
-        temperatureSet = (getTempSet[0] - 2 ** 16) / 10 if getTempSet[0] > 2 ** 15 else getTempSet[0] / 10
-        humidityCurrent = getHumCur[0] / 10
-        humiditySet = getHumSet[0]
-        statusIndex = int(getStatus[0])
-        modeIndex = int(getMode[0])
-    except UnboundLocalError:
-        print("Modbus format error")
-    except TimeoutError:
-        ConnectionError()
-        return
-    except ConnectionRefusedError:
-        print("Modbus read error")
-    root.after(2000, ReadModbusTCP)
+    while True:
+        try:
+            getSys = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10099, 10)
+            getTempCur = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10109, 1)
+            getTempSet = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10110, 1)
+            getHumCur = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10111, 1)
+            getHumSet = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10112, 1)
+            getStatus = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10115, 1)
+            getMode = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10114, 1)
+            panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
+            panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
+            panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
+            currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
+            filename = f"{getSys[6]:04}{getSys[5]:02}{getSys[4]:02}"
+            picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
+            temperatureCurrent = (getTempCur[0] - 2 ** 16) / 10 if getTempCur[0] > 2 ** 15 else getTempCur[0] / 10
+            temperatureSet = (getTempSet[0] - 2 ** 16) / 10 if getTempSet[0] > 2 ** 15 else getTempSet[0] / 10
+            humidityCurrent = getHumCur[0] / 10
+            humiditySet = getHumSet[0]
+            statusIndex = int(getStatus[0])
+            modeIndex = int(getMode[0])
+        except UnboundLocalError:
+            print("Modbus format error")
+        except TimeoutError:
+            ConnectionError()
+            return
+        except ConnectionRefusedError:
+            print("Modbus read error")
+        time.sleep(1)
 
 
 def FTPhistory():
@@ -302,25 +308,25 @@ def CSVhistory():
 
 
 def CurrentUpdate():
-    try:
-        remoteFile = ''.join(fileList[-1:])
-        localFile = f"{dtlFolder}{remoteFile}"
-        with open(localFile, "wb") as file:
-            ftp.retrbinary("RETR %s" % remoteFile, file.write)
-    except TimeoutError:
-        ConnectionError()
-        return
-    except NameError:
-        print("Error open FTP document")
-        return
-    dtlList = os.listdir(dtlFolder)
-    dtlFile = ''.join(dtlList[-1:])
-    csvFile = f"{dtlFile[:8]}.csv"
-    xlsFile = f"{dtlFile[:8]}.xls"
-    subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{csvFolder}{csvFile}"', shell=True)
-    subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{xlsFolder}{xlsFile}"', shell=True)
-
-    root.after(5000, CurrentUpdate)
+    while True:
+        try:
+            remoteFile = ''.join(fileList[-1:])
+            localFile = f"{dtlFolder}{remoteFile}"
+            with open(localFile, "wb") as file:
+                ftp.retrbinary("RETR %s" % remoteFile, file.write)
+        except TimeoutError:
+            ConnectionError()
+            return
+        except NameError:
+            print("Error open FTP document")
+            return
+        dtlList = os.listdir(dtlFolder)
+        dtlFile = ''.join(dtlList[-1:])
+        csvFile = f"{dtlFile[:8]}.csv"
+        xlsFile = f"{dtlFile[:8]}.xls"
+        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{csvFolder}{csvFile}"', shell=True)
+        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{xlsFolder}{xlsFile}"', shell=True)
+        time.sleep(5)
 
 
 def WriteFile():
@@ -358,7 +364,6 @@ def Plot():
         frameDataNow = pandas.read_csv(filePath, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
         frameCurrentNow = frameDataPrev.loc[((frameDataNow["Time"] >= "00:00:00") & (frameDataNow["Time"] <= "02:00:00")), frameColumns]
         frameCurrent = pandas.concat([frameCurrentPrev, frameCurrentNow], ignore_index=True)
-        # print(f"{filePathPrev}:{frameCurrentPrev}, {filePath}:{frameCurrentNow}")
         print(filePathPrev)
     except FileNotFoundError:
         print("File not found")
@@ -370,6 +375,7 @@ def Plot():
     graphTemp = figure.add_subplot(111)
     graphTemp.xaxis.set_major_locator(lox)
     graphTemp.set_facecolor(bgLoc)
+    graphTemp.set_title(machineName, color="yellow")
     try:
         graphTemp.plot(frameCurrent["Time"], frameCurrent["TemperatureCurrent"], "-w",
                             frameCurrent["Time"], frameCurrent["TemperatureSet"], "--c")
@@ -407,16 +413,20 @@ def SaveFigure():
     figure.savefig(f"{picFolder}{picname}")
 
 
-def UpdateHeat(index):
-    framePic = framesHeat[index]
-    index += 1
-    if index == 14:
-        index = 0
-    heatLabel.configure(image=framePic, borderwidth=0)
-    root.after(50, UpdateHeat, index)
+def UpdateHeat(index=0):
+    try:
+        framePic = framesHeat[index]
+        index += 1
+        if index == 14:
+            index = 0
+        heatLabel.configure(image=framePic, borderwidth=0)
+        root.after(50, UpdateHeat, index)
+    except Exception:
+        print("error")
+        return
 
 
-def UpdateCold(index):
+def UpdateCold(index=0):
     framePic = framesCold[index]
     index += 1
     if index == 10:
@@ -425,7 +435,7 @@ def UpdateCold(index):
     root.after(100, UpdateCold, index)
 
 
-def UpdateWet(index):
+def UpdateWet(index=0):
     framePic = framesWet[index]
     index += 1
     if index == 12:
@@ -434,7 +444,7 @@ def UpdateWet(index):
     root.after(100, UpdateWet, index)
 
 
-def UpdateDry(index):
+def UpdateDry(index=0):
     framePic = framesDry[index]
     index += 1
     if index == 10:
@@ -443,7 +453,7 @@ def UpdateDry(index):
     root.after(100, UpdateDry, index)
 
 
-def UpdateIdleTemp(index):
+def UpdateIdleTemp(index=0):
     framePic = framesIdle[index]
     index += 1
     if index == 12:
@@ -452,7 +462,7 @@ def UpdateIdleTemp(index):
     root.after(100, UpdateIdleTemp, index)
 
 
-def UpdateIdleHum(index):
+def UpdateIdleHum(index=0):
     framePic = framesIdle[index]
     index += 1
     if index == 12:
@@ -467,7 +477,7 @@ root.geometry("1000x800")
 root.wm_geometry("+%d+%d" % (100, 100))
 root["bg"] = bgGlob
 root.resizable(False, False)
-icon = PhotoImage(file=f"{rootFolder}icon.png")
+icon = PhotoImage(file="icons\\icon.png")
 root.iconphoto(False, icon)
 
 canvas = Canvas(width=998, height=698, bg=bgGlob, highlightthickness=1, highlightbackground=bgGlob)
@@ -481,41 +491,38 @@ canvas.create_rectangle(660, 0, 980, 180, fill="#510D70", outline="#510D70")
 canvas.create_rectangle(18, 208, 988, 698, fill="#352642", outline="#241C2B")
 canvas.create_rectangle(10, 200, 980, 690, fill="#510D70", outline="#510D70")
 
-framesHeat = [PhotoImage(file=f"{rootFolder}Icons\\heat.gif", format="gif -index %i" %(i)) for i in range(15)]
-framesCold = [PhotoImage(file=f"{rootFolder}Icons\\cold.gif", format="gif -index %i" %(i)) for i in range(10)]
-framesWet = [PhotoImage(file=f"{rootFolder}Icons\\wet.gif", format="gif -index %i" %(i)) for i in range(12)]
-framesDry = [PhotoImage(file=f"{rootFolder}Icons\\dry.gif", format="gif -index %i" %(i)) for i in range(10)]
-framesIdle = [PhotoImage(file=f"{rootFolder}Icons\\idle.gif", format="gif -index %i" %(i)) for i in range(12)]
-heatLabel = tkinter.Label(root)
+framesHeat = [PhotoImage(file="icons\\heat.gif", format="gif -index %i" %(i)) for i in range(15)]
+framesCold = [PhotoImage(file="icons\\cold.gif", format="gif -index %i" %(i)) for i in range(10)]
+framesWet = [PhotoImage(file="icons\\wet.gif", format="gif -index %i" %(i)) for i in range(12)]
+framesDry = [PhotoImage(file="icons\\dry.gif", format="gif -index %i" %(i)) for i in range(10)]
+framesIdle = [PhotoImage(file="icons\\idle.gif", format="gif -index %i" %(i)) for i in range(12)]
+# heatLabel = tkinter.Label(root)
 coldLabel = tkinter.Label(root)
 wetLabel = tkinter.Label(root)
 dryLabel = tkinter.Label(root)
 idleTempLabel = tkinter.Label(root)
 idleHumLabel = tkinter.Label(root)
-heatLabel.place(x=360, y=90)
+# heatLabel.place(x=340, y=90)
 # coldLabel.place(x=440, y=90)
 # idleTempLabel.place(x=540, y=90)
-wetLabel.place(x=360, y=180)
+# wetLabel.place(x=340, y=180)
 # dryLabel.place(x=440, y=180)
 # idleHumLabel.place(x=540, y=180)
-root.after(0, UpdateHeat, 0)
-# root.after(0, UpdateCold, 0)
-root.after(0, UpdateWet, 0)
-# root.after(0, UpdateDry, 0)
-# root.after(0, UpdateIdleTemp, 0)
-# root.after(0, UpdateIdleHum, 0)
 
-heaterStatLabel = Label(fg="dim gray", bg=bgGlob)
-coolerStatLabel = Label(fg="dim gray", bg=bgGlob)
-valveStatLabel = Label(fg="dim gray", bg=bgGlob)
-dehydratorStatLabel = Label(fg="dim gray", bg=bgGlob)
-generatorStatLabel = Label(fg="dim gray", bg=bgGlob)
-pumpStatLabel = Label(fg="dim gray", bg=bgGlob)
-fanStatLabel = Label(fg="white", bg="green")
+threadModbus = threading.Thread(target=ReadModbusTCP, daemon=True, name="modbus")
+threadFTP = threading.Thread(target=CurrentUpdate, daemon=True, name='ftp')
+
+# root.after(0, UpdateHeat)
+# root.after(0, UpdateCold)
+# root.after(0, UpdateIdleTemp)
+# root.after(0, UpdateWet)
+# root.after(0, UpdateDry)
+# root.after(0, UpdateIdleHum)
 
 logoLabel = Label(font=("Arial", 10, "bold"), fg=fgComm, bg=bgGlob)
 armIPLabel = Label(fg=fgComm, bg=bgGlob)
 panelIPLabel = Label(fg=fgComm, bg=bgGlob)
+panelNameLabel = Label(fg=fgComm, bg=bgGlob)
 panelDateLabel = Label(fg=fgComm, bg=bgGlob, anchor="e")
 panelTimeLabel = Label(fg=fgComm, bg=bgGlob, anchor="e")
 statusLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
@@ -535,12 +542,18 @@ labelNotif = Label(anchor="w", fg=bgLoc, bg=bgLoc)
 
 figure = Figure(figsize=(9.5, 4.7), dpi=100, facecolor=bgLoc)
 canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
-view = ttk.Style().configure("TButton", background=bgLoc, foreground=bgLoc, color=bgLoc)
-ttk.Style().configure("C.TButton", foreground=bgLoc, background="black", padding=4)
-buttonSave = ttk.Button(command=SaveFigure, style=view)
+
+# view = ttk.Style().configure("TButton", background="red", foreground="red", color="red", relief="flat")
+
+ttk.Style().configure("TButton", font="helvetica 8", background="red", relief="sunken")
+buttonSave = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
+buttonName = ttk.Button(command=DeleteButton, style="TButton", text="Задать наименование установки")
+
+b1 = ttk.Button(command=ShowGif).place(x=700, y=10, width=50)
+b2 = ttk.Button(command=HideGif).place(x=700, y=30, width=50)
 
 ObjectsPlace()
 GetLocalIP()
-CheckIP()
+# CheckIP()
 
 root.mainloop()

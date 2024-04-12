@@ -17,7 +17,7 @@ import modbus_tk.modbus_tcp as modbus_tcp
 import matplotlib.ticker
 import matplotlib.dates
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas
 
 
@@ -37,8 +37,9 @@ csvFolder = f"{rootFolder}\\CSV\\"
 xlsFolder = f"{rootFolder}\\XLS\\"
 machineIP, machineName = "", ""
 sliceActive = False
-showerror = False
 sliceChange = False
+showSlice = False
+showerror = False
 sliceTimeFrom, sliceTimeTo = "", ""
 
 
@@ -90,29 +91,43 @@ def LabelsShow():
 def GraphControl():
     global graphLabels, graphPeriods, graphDefault
     graphLabels = ["1 минута", "5 минут", "15 минут", "30 минут", "1 час", "2 часа",
-                   "Настраиваемый за 1 день", "Настраиваемый за 2 дня"]
-    graphPeriods = ["00:01:00", "00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "00:00:00", "10:00:00"]
+                   "<Настроить>"]
+    graphPeriods = ["00:01:00", "00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "00:01:00"]
     graphDefault = StringVar(value=graphLabels[0])
     graphPeriod = ttk.Combobox(values=graphLabels, textvariable=graphDefault, width=22, state="readonly",
                                background=bgLoc, foreground=bgLoc)
     graphPeriod.place(x=820, y=90)
-    buttonSave.place(x=670, y=220, width=300)
+    # buttonSave.place(x=670, y=220, width=300)
     buttonName.place(x=400, y=10, width=200)
 
 
 def ShowSlice():
     def GetSlice():
-        global sliceChange, sliceTimeFrom, sliceTimeTo
+        global sliceActive, sliceTimeFrom, sliceTimeTo
         dateStart = "2024"+monthFrom.get()+dayFrom.get()+".csv"
         sliceTimeFrom = f"{hourFrom.get()}:{minutesFrom.get()}:00"
         dateEnd = "2024"+monthTo.get()+dayTo.get()+".csv"
         sliceTimeTo = f"{hourTo.get()}:{minutesTo.get()}:00"
-        sliceChange = True
+        sliceActive = True
+        HideSlice()
+        print(dateStart, ">>>", sliceTimeFrom)
+        print(dateEnd, ">>>", sliceTimeTo)
+
     def TimeValidControl():
-        if hourInitial.get() > panelTime[0:2]:
-            hourInitial.set(value=panelTime[0:2])
-        if (hourInitial.get() == panelTime[0:2]) & (minutesInitial.get() > panelTime[5:7]):
-            minutesInitial.set(value=panelTime[5:7])
+        if hourFinal.get() > panelTime[0:2]:
+            hourFinal.set(value=panelTime[0:2])
+        if (hourFinal.get() == panelTime[0:2]) & (minutesFinal.get() > panelTime[5:7]):
+            minutesFinal.set(value=panelTime[5:7])
+        if (hourFinal.get() == "00") & (minutesFinal.get() == "00"):
+            minutesFinal.set(value="01")
+        if hourInitial.get() > hourFinal.get():
+            hourInitial.set(value=str(hourFinal.get()))
+        if (hourInitial.get() == hourFinal.get()) & (minutesInitial.get() >= minutesFinal.get()):
+            if minutesFinal.get() == "00":
+                hourInitial.set(value=f"{(int(hourFinal.get())-1):02.0f}")
+                minutesInitial.set(value="59")
+            else:
+                minutesInitial.set(value=f"{(int(minutesFinal.get())-1):02.0f}")
 
     global sliceFrame
     dayNow = StringVar(value=panelDate[0:2])
@@ -123,49 +138,51 @@ def ShowSlice():
     hourFinal = StringVar(value=panelTime[0:2])
     minutesFinal = StringVar(value=panelTime[5:7])
 
-    sliceFrame = tkinter.Frame(master=root, borderwidth=1, width=300, height=140)
+    sliceFrame = tkinter.Frame(master=root, borderwidth=1, width=300, height=140, bg=bgLoc)
     sliceFrame.place(x=670, y=120)
-    tkinter.Button(master=sliceFrame, text="Сформировать график", command=GetSlice).place(x=0, y=110, width=300, height=25)
+    ttk.Button(master=sliceFrame, text="Сформировать график", command=GetSlice, style="TButton")\
+        .place(x=0, y=110, width=300, height=25)
 
-    tkinter.Label(master=sliceFrame, text="Начало выборки", anchor="w").place(x=0, y=10, height=20)
-    tkinter.Label(master=sliceFrame, text="Дата:", anchor="e").place(x=100, y=0, width=50, height=20)
+    tkinter.Label(master=sliceFrame, text="Начало выборки", anchor="w", bg=bgLoc, fg="white").place(x=0, y=10, height=20)
+    tkinter.Label(master=sliceFrame, text="Дата:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=0, width=50, height=20)
     dayFrom = tkinter.Spinbox(master=sliceFrame, from_=1, to=31, state="disabled", format="%02.0f",
                               textvariable=dayNow)
-    dayFrom.place(x=160, y=0, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=".").place(x=195, y=0, width=5, height=20)
+    dayFrom.place(x=180, y=0, width=30, height=20)
+    tkinter.Label(master=sliceFrame, text=".", bg=bgLoc, fg="white").place(x=215, y=0, width=5, height=20)
     monthFrom = tkinter.Spinbox(master=sliceFrame, from_=1, to=12, state="disabled", format="%02.0f",
                                 textvariable=monthNow)
-    monthFrom.place(x=205, y=0, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=f" .  {yearNow}", anchor="w").place(x=235, y=0, width=40, height=20)
-    tkinter.Label(master=sliceFrame, text="Время:", anchor="e").place(x=100, y=25, width=50, height=20)
+    monthFrom.place(x=225, y=0, width=30, height=20)
+    tkinter.Label(master=sliceFrame, text=f" .  {yearNow}", anchor="w", bg=bgLoc, fg="white").place(x=255, y=0, width=40, height=20)
+    tkinter.Label(master=sliceFrame, text="Время:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=25, width=50, height=20)
     hourFrom = tkinter.Spinbox(master=sliceFrame, from_=0, to=24, state="readonly", format="%02.0f",
-                               textvariable=hourInitial, command=TimeValidControl)
-    hourFrom.place(x=160, y=25, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=":").place(x=195, y=25, width=5, height=20)
-    minutesFrom = tkinter.Spinbox(master=sliceFrame, from_=0, to=55, increment=5, state="readonly", format="%02.0f",
+                        textvariable=hourInitial, command=TimeValidControl,
+                        buttonbackground=bgLoc, foreground=bgLoc, buttonuprelief="sunken")
+    hourFrom.place(x=180, y=25, width=30, height=20)
+    tkinter.Label(master=sliceFrame, text=":", bg=bgLoc, fg="white").place(x=215, y=25, width=5, height=20)
+    minutesFrom = tkinter.Spinbox(master=sliceFrame, from_=0, to=55, state="readonly", format="%02.0f",
                                   textvariable=minutesInitial, command=TimeValidControl)
-    minutesFrom.place(x=205, y=25, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=" :  00", anchor="w").place(x=235, y=25, width=40, height=20)
+    minutesFrom.place(x=225, y=25, width=30, height=20)
+    tkinter.Label(master=sliceFrame, text=" :  00", anchor="w", bg=bgLoc, fg="white").place(x=255, y=25, width=40, height=20)
 
-    tkinter.Label(master=sliceFrame, text="Конец выборки", anchor="w").place(x=0, y=65, height=20)
-    tkinter.Label(master=sliceFrame, text="Дата:", anchor="e").place(x=100, y=55, width=50, height=20)
+    tkinter.Label(master=sliceFrame, text="Конец выборки", anchor="w", bg=bgLoc, fg="white").place(x=0, y=65, height=20)
+    tkinter.Label(master=sliceFrame, text="Дата:", anchor="e", bg=bgLoc, fg="white").place(x=100, y=55, width=50, height=20)
     dayTo = tkinter.Spinbox(master=sliceFrame, from_=1, to=31, state="disabled", format="%02.0f",
                             textvariable=dayNow)
     dayTo.place(x=160, y=55, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=".").place(x=195, y=55, width=5, height=20)
+    tkinter.Label(master=sliceFrame, text=".", bg=bgLoc, fg="white").place(x=195, y=55, width=5, height=20)
     monthTo = tkinter.Spinbox(master=sliceFrame, from_=1, to=12, state="disabled", format="%02.0f",
                               textvariable=monthNow)
     monthTo.place(x=205, y=55, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=" .  2024", anchor="w").place(x=235, y=55, width=40, height=20)
-    tkinter.Label(master=sliceFrame, text="Время:", anchor="e").place(x=100, y=80, width=50, height=20)
+    tkinter.Label(master=sliceFrame, text=f" .  {yearNow}", anchor="w", bg=bgLoc, fg="white").place(x=235, y=55, width=40, height=20)
+    tkinter.Label(master=sliceFrame, text="Время:", anchor="e", bg=bgLoc, fg="white").place(x=100, y=80, width=50, height=20)
     hourTo = tkinter.Spinbox(master=sliceFrame, from_=0, to=24, state="readonly", format="%02.0f",
                              textvariable=hourFinal, command=TimeValidControl)
     hourTo.place(x=160, y=80, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=":").place(x=195, y=80, width=5, height=20)
+    tkinter.Label(master=sliceFrame, text=":", bg=bgLoc, fg="white").place(x=195, y=80, width=5, height=20)
     minutesTo = tkinter.Spinbox(master=sliceFrame, from_=0, to=59, state="readonly", format="%02.0f",
                                 textvariable=minutesFinal, command=TimeValidControl)
     minutesTo.place(x=205, y=80, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=" :  00", anchor="w").place(x=235, y=80, width=40, height=20)
+    tkinter.Label(master=sliceFrame, text=" :  00", anchor="w", bg=bgLoc, fg="white").place(x=235, y=80, width=40, height=20)
 
 
 def HideSlice():
@@ -277,6 +294,7 @@ def OpenConnection():
     FTPhistory()
     CSVhistory()
     threadFTP.start() if not threadFTP.is_alive() else None
+    GetPeriod()
     Plot()
 
 
@@ -419,37 +437,57 @@ def WriteFile():
     # root.after(1000, WriteFile)
 
 
+def GetPeriod():
+    global showSlice, sliceActive, buttonEdit
+    choice = graphLabels.index(graphDefault.get())
+    if (choice == 6) & (showSlice is False):
+        showSlice = True
+        buttonEdit = ttk.Button(command=ShowSlice, style="TButton", text="Изменить диапазон")
+        buttonEdit.place(x=670, y=130, width=300)
+        ShowSlice()
+    if (choice != 6) & (showSlice is True):
+        showSlice = False
+        sliceActive = False
+        buttonEdit.destroy()
+        HideSlice()
+        Plot()
+    root.after(1000, GetPeriod)
+
+
 def Plot():
-    global canvasError, showerror
+    global canvasError, showerror, sliceActive
+    chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
     try:
         fileList = os.listdir(csvFolder)
-        filePath = csvFolder + ''.join(fileList[-1])
-        choice = graphDefault.get()
-        choiceTime = graphPeriods[graphLabels.index(choice)]
+        fileMain = csvFolder + ''.join(fileList[-1])
     except FileNotFoundError:
         print("File not found 2. Need to print error on plot")
     try:
         if not sliceActive:
             timeNow = datetime.strptime(currentTime, "%H:%M:%S")
-            timeDif = datetime.strptime(choiceTime, "%H:%M:%S")
-            timeBegin = str(timeNow - timeDif)
-            frameData = pandas.read_csv(filePath, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
+            timeDif = datetime.strptime(chosenTime, "%H:%M:%S")
+            timeBegin = str(datetime.strptime(str(timeNow-timeDif), "%H:%M:%S").time())
+            frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
             frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
             frameCurrent = frameData.loc[frameData["Time"] >= timeBegin, frameColumns]
             print("Normal reading data")
-            print(timeBegin)
         else:
-
+            frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
+            frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
+            frameCurrent = frameData.loc[(frameData["Time"] >= sliceTimeFrom) &
+                                         (frameData["Time"] <= sliceTimeTo), frameColumns]
+            print("Normal reading data 2")
+            # filePathPrev = csvFolder + ''.join(fileList[-2])
+            # frameDataPrev = pandas.read_csv(filePathPrev, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
+            # frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
+            # frameCurrentPrev = frameDataPrev.loc[((frameDataPrev["Time"] >= "23:00:00") &
+            #                                       (frameDataPrev["Time"] <= "23:59:59")), frameColumns]
+            # frameDataNow = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
+            # frameCurrentNow = frameDataPrev.loc[((frameDataNow["Time"] >= "00:00:00") &
+            #                                      (frameDataNow["Time"] <= "02:00:00")), frameColumns]
+            # frameCurrent = pandas.concat([frameCurrentPrev, frameCurrentNow], ignore_index=True)
     except ValueError:
         print("Time read error")
-        # filePathPrev = csvFolder + ''.join(fileList[-2])
-        # frameDataPrev = pandas.read_csv(filePathPrev, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
-        # frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
-        # frameCurrentPrev = frameDataPrev.loc[((frameDataPrev["Time"] >= "23:00:00") & (frameDataPrev["Time"] <= "23:59:59")), frameColumns]
-        # frameDataNow = pandas.read_csv(filePath, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
-        # frameCurrentNow = frameDataPrev.loc[((frameDataNow["Time"] >= "00:00:00") & (frameDataNow["Time"] <= "02:00:00")), frameColumns]
-        # frameCurrent = pandas.concat([frameCurrentPrev, frameCurrentNow], ignore_index=True)
-        # print(filePathPrev)
     except FileNotFoundError:
         print("File not found. Need to print error on plot")
         return
@@ -496,6 +534,9 @@ def Plot():
     figure.autofmt_xdate()
     canvasGraph.draw()
     canvasGraph.get_tk_widget().place(x=20, y=290)
+    if sliceActive:
+        # NavigationToolbar2Tk(canvasGraph)
+        return
 
     root.after(5000, Plot)
 
@@ -636,17 +677,15 @@ canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
 
 canvasError = tkinter.Canvas(master=root, bg="red", width=100, height=100)
 
-ttk.Style().configure("TButton", font="helvetica 8", background="red", relief="sunken")
+ttk.Style().configure("TButton", font="helvetica 8", background=bgGlob, relief="sunken")
 buttonSave = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
 buttonName = ttk.Button(command=DeleteButton, style="TButton", text="Задать наименование установки")
 
 b1 = ttk.Button(command=ShowGif).place(x=700, y=10, width=50)
 b2 = ttk.Button(command=HideGif).place(x=700, y=30, width=50)
-b3 = ttk.Button(command=ShowSlice).place(x=760, y=10, width=50)
-b4 = ttk.Button(command=HideSlice).place(x=760, y=30, width=50)
 
 ObjectsPlace()
 GetLocalIP()
-CheckIP()
+# CheckIP()
 
 root.mainloop()

@@ -89,17 +89,300 @@ def LabelsShow():
     root.after(1000, LabelsShow)
 
 
+def GetLocalIP():
+    global localIP
+    hostname = socket.gethostname()
+    localIP = socket.gethostbyname(hostname)
+
+
+def InputIP():
+    def GetIP():
+        global machineIP
+        stringIP = entryIP.get()
+        record = [stringIP, "Климатическая установка"]
+        configPath = f"{rootFolder}config.ini"
+        with open(configPath, mode="a", newline="") as configFile:
+            writeIP = csv.writer(configFile)
+            writeIP.writerow(record)
+        machineIP = stringIP
+        screenIP.grab_release()
+        screenIP.destroy()
+        CheckIP()
+    def Mask(ip):
+        validIP = re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ip)
+        buttonStart["state"] = "normal" if validIP is not None else "disabled"
+        return True
+    screenIP = Toplevel(root)
+    screenIP.title("Введите IP")
+    screenIP.geometry("300x150")
+    rootPosX = root.winfo_rootx() + 250
+    rootPosY = root.winfo_rooty() + 350
+    screenIP.wm_geometry("+%d+%d" % (rootPosX, rootPosY))
+    screenIP.resizable(False, False)
+    screenIP.grab_set()
+    screenIP.protocol("WM_DELETE_WINDOW", sys.exit)
+    iconIP = PhotoImage(file="icons\\icon.png")
+    screenIP.iconphoto(False, iconIP)
+    labelIP = tkinter.Label(master=screenIP, text="Введите IP адрес климатической установки:")
+    labelIP.place(x=10, y=30, width=280)
+    isvalid = (screenIP.register(Mask), "%P")
+    entryIP = tkinter.Entry(master=screenIP, relief="solid", justify="center",
+                            validate="key", validatecommand=isvalid)
+    entryIP.place(x=10, y=50, width=280)
+    buttonStart = tkinter.Button(master=screenIP, text="Начать опрос", command=GetIP, state="disabled")
+    buttonStart.place(x=10, y=80, width=280)
+    buttonClose = tkinter.Button(master=screenIP, text="Закрыть программу", command=sys.exit)
+    buttonClose.place(x=10, y=110, width=280)
+
+
+def CheckIP():
+    global machineIP, machineName
+    configPath = f"{rootFolder}config.ini"
+    frameIP = pandas.read_csv(configPath, sep=",", encoding="cp1251")
+    if frameIP.empty:
+        InputIP()
+    else:
+        machineIP = frameIP.iloc[-1]["ip"]
+        machineName = frameIP.iloc[-1]["name"]
+        OpenConnection()
+
+
+def DeleteButton():
+    # buttonName.destroy()
+    raise Exception("Abort")
+
+
+def ShowGif():
+    global heatLabel
+    heatLabel = tkinter.Label(root)
+    heatLabel.place(x=340, y=90)
+    UpdateHeat()
+
+
+def HideGif():
+    global heatLabel
+    heatLabel.destroy()
+
+
+def OpenConnection():
+    global machineIP, master, ftp, fileList, csvFolder, xlsFolder
+    try:
+        master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=5)
+        master.set_timeout(5.0)
+    except TimeoutError:
+        ConnectionErrorWindow()
+        return
+    try:
+        ftp = ftplib.FTP(host=machineIP, timeout=5)
+        ftp.login(user="uploadhis", passwd="111111")
+        ftp.cwd("datalog/data")
+        fileList = ftp.nlst()
+        csvFolder = f"{rootFolder}{machineIP}\\CSV\\"
+        xlsFolder = f"{rootFolder}{machineIP}\\XLS\\"
+    except TimeoutError:
+        ConnectionErrorWindow()
+        return
+    except AttributeError:
+        ConnectionErrorWindow()
+        return
+    except ftplib.error_perm:
+        DeviceErrorWindow()
+        return
+    threadModbus.start() if not threadModbus.is_alive() else None
+    LabelsShow()
+    GraphControl()
+    HistoryFTP()
+    HistoryCSV()
+    threadFTP.start() if not threadFTP.is_alive() else None
+    GetPeriod()
+    Plot()
+
+
+def ConnectionErrorWindow():
+    def Countdown():
+        global wait
+        if wait > 1:
+            wait -= 1
+            info["text"] = f"Ошибка соединения...\nПовтор через: {wait}"
+            screenError.after(1000, Countdown)
+        else:
+            RetryConnection()
+    def RetryConnection():
+        screenError.grab_release()
+        screenError.destroy()
+        OpenConnection()
+    def ResetIP():
+        screenError.grab_release()
+        screenError.destroy()
+        InputIP()
+    global wait
+    wait = 10
+    screenError = Toplevel(root)
+    screenError.title("ВНИМАНИЕ")
+    screenError.geometry("300x100")
+    rootPosX = root.winfo_rootx() + 250
+    rootPosY = root.winfo_rooty() + 350
+    screenError.wm_geometry("+%d+%d" % (rootPosX, rootPosY))
+    screenError.resizable(False, False)
+    screenError.grab_set()
+    screenError["bg"] = "yellow"
+    screenError.protocol("WM_DELETE_WINDOW", sys.exit)
+    screenIcon = PhotoImage(file="icons\\icon.png")
+    screenError.iconphoto(False, screenIcon)
+
+    info = tkinter.Label(master=screenError, bg="yellow")
+    info.place(x=10, y=10, width=280)
+    buttonRetry = ttk.Button(master=screenError, text="Повторить", command=RetryConnection)
+    buttonChange = ttk.Button(master=screenError, text="Изменить IP", command=ResetIP)
+    buttonClose = ttk.Button(master=screenError, text="Завершить", command=sys.exit)
+    buttonRetry.place(x=15, y=60, width=80)
+    buttonChange.place(x=110, y=60, width=80)
+    buttonClose.place(x=205, y=60, width=80)
+    screenError.after(50, Countdown)
+
+
+def DeviceErrorWindow():
+    screenError = Toplevel(root)
+    screenError.title("ВНИМАНИЕ")
+    screenError.geometry("300x100")
+    rootPosX = root.winfo_rootx() + 250
+    rootPosY = root.winfo_rooty() + 350
+    screenError.wm_geometry("+%d+%d" % (rootPosX, rootPosY))
+    screenError.resizable(False, False)
+    screenError.grab_set()
+    screenError["bg"] = "yellow"
+    screenError.protocol("WM_DELETE_WINDOW", sys.exit)
+    screenIcon = PhotoImage(file="icons\\icon.png")
+    screenError.iconphoto(False, screenIcon)
+
+    info = tkinter.Label(master=screenError, bg="yellow", text="Невозможно установить связь!")
+    info.place(x=10, y=10, width=280)
+    buttonClose = ttk.Button(master=screenError, text="Завершить", command=sys.exit)
+    buttonClose.place(x=20, y=60, width=260)
+
+
+def ReadModbusTCP():
+    global panelIP, panelDate, panelTime, currentTime, filename, picname, \
+        temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, modeIndex, statusIndex
+    while True:
+        try:
+            getSys = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10099, 10)
+            getTempCur = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10109, 1)
+            getTempSet = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10110, 1)
+            getHumCur = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10111, 1)
+            getHumSet = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10112, 1)
+            getStatus = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10115, 1)
+            getMode = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10114, 1)
+            panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
+            panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
+            panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
+            currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
+            filename = f"{getSys[6]:04}{getSys[5]:02}{getSys[4]:02}"
+            picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
+            temperatureCurrent = (getTempCur[0] - 2 ** 16) / 10 if getTempCur[0] > 2 ** 15 else getTempCur[0] / 10
+            temperatureSet = (getTempSet[0] - 2 ** 16) / 10 if getTempSet[0] > 2 ** 15 else getTempSet[0] / 10
+            humidityCurrent = getHumCur[0] / 10
+            humiditySet = getHumSet[0]
+            statusIndex = int(getStatus[0])
+            modeIndex = int(getMode[0])
+        except UnboundLocalError:
+            print("Modbus format error")
+        except TimeoutError:
+            ConnectionErrorWindow()
+            return
+        except ConnectionRefusedError:
+            print("Modbus read error")
+        time.sleep(1)
+
+
+def HistoryFTP():
+    try:
+        for fileNum in fileList:
+            remoteFile = fileNum
+            localFile = f"{dtlFolder}{remoteFile}"
+            with open(localFile, "wb") as file:
+                ftp.retrbinary("RETR %s" % remoteFile, file.write)
+    except NameError:
+        DeviceErrorWindow()
+        return
+    except TimeoutError:
+        ConnectionErrorWindow()
+        return
+
+
+def HistoryCSV():
+    fileList = os.listdir(dtlFolder)
+    for fileNum in fileList:
+        dtlFile = fileNum
+        csvFile = f"{fileNum[:8]}.csv"
+        xlsFile = f"{fileNum[:8]}.xls"
+        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{csvFolder}{csvFile}"', shell=True)
+        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{xlsFolder}{xlsFile}"', shell=True)
+
+
+def CurrentUpdate():
+    while True:
+        try:
+            remoteFile = ''.join(fileList[-1:])
+            localFile = f"{dtlFolder}{remoteFile}"
+            with open(localFile, "wb") as file:
+                ftp.retrbinary("RETR %s" % remoteFile, file.write)
+        except TimeoutError:
+            ConnectionErrorWindow()
+            return
+        except NameError:
+            DeviceErrorWindow()
+            return
+        except FileNotFoundError:
+            print("File not found. Need to print error on plot")
+        dtlList = os.listdir(dtlFolder)
+        dtlFile = ''.join(dtlList[-1:])
+        csvFile = f"{dtlFile[:8]}.csv"
+        xlsFile = f"{dtlFile[:8]}.xls"
+        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{csvFolder}{csvFile}"', shell=True)
+        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{xlsFolder}{xlsFile}"', shell=True)
+        time.sleep(5)
+
+
+def WriteFile():
+    os.chdir(f"{rootFolder}_DATA\\")
+    filepath = f"{rootFolder}_DATA/test.csv"
+    with open(filepath, mode="a", encoding="utf-8", newline="") as file:
+        update = csv.writer(file)
+        time = datetime.strptime(panelTime, "%H : %M : %S").time()
+        record = [time, temperatureCurrent]
+        if time.second % 5 == 0:
+            update.writerow(record)
+    # root.after(1000, WriteFile)
+
+
 def GraphControl():
     global graphLabels, graphPeriods, graphDefault
-    graphLabels = ["1 минута", "5 минут", "15 минут", "30 минут", "1 час", "2 часа",
-                   "<Настроить>"]
-    graphPeriods = ["00:01:00", "00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "00:01:00"]
+    graphLabels = ["5 минут", "15 минут", "30 минут", "1 час", "2 часа", "4 часа", "<Настроить>"]
+    graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:01:00"]
     graphDefault = StringVar(value=graphLabels[0])
     graphPeriod = ttk.Combobox(values=graphLabels, textvariable=graphDefault, width=22, state="readonly",
                                background=bgLoc, foreground=bgLoc)
     graphPeriod.place(x=820, y=90)
     # buttonSave.place(x=670, y=220, width=300)
     buttonName.place(x=400, y=10, width=200)
+
+
+def GetPeriod():
+    global showSlice, sliceActive, buttonEdit
+    choice = graphLabels.index(graphDefault.get())
+    if (choice == 6) & (showSlice is False):
+        showSlice = True
+        buttonEdit = ttk.Button(command=ShowSlice, style="TButton", text="Изменить диапазон")
+        buttonEdit.place(x=670, y=130, width=300)
+        ShowSlice()
+    if (choice != 6) & (showSlice is True):
+        showSlice = False
+        sliceActive = False
+        buttonEdit.destroy()
+        HideSlice()
+        Plot()
+    root.after(1000, GetPeriod)
 
 
 def ShowSlice():
@@ -111,8 +394,6 @@ def ShowSlice():
         sliceTimeTo = f"{hourTo.get()}:{minutesTo.get()}:00"
         sliceActive = True
         HideSlice()
-        print(sliceDateFrom, ">>>", sliceTimeFrom)
-        print(sliceDateTo, ">>>", sliceTimeTo)
 
     def TimeValidControl():
         dateInitialSet = datetime.strptime(f"{dayInitial.get()}/{monthInitial.get()}/{yearNow}", "%d/%m/%Y")
@@ -241,301 +522,9 @@ def HideSlice():
     sliceFrame.destroy()
 
 
-def GetLocalIP():
-    global localIP
-    hostname = socket.gethostname()
-    localIP = socket.gethostbyname(hostname)
-
-
-def InputIP():
-    def GetIP():
-        global machineIP
-        stringIP = entryIP.get()
-        record = [stringIP, "Климатическая установка"]
-        configPath = f"{rootFolder}config.ini"
-        with open(configPath, mode="a", newline="") as configFile:
-            writeIP = csv.writer(configFile)
-            writeIP.writerow(record)
-        machineIP = stringIP
-        screenIP.grab_release()
-        screenIP.destroy()
-        CheckIP()
-    def Mask(ip):
-        validIP = re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ip)
-        buttonStart["state"] = "normal" if validIP is not None else "disabled"
-        return True
-    screenIP = Toplevel(root)
-    screenIP.title("Введите IP")
-    screenIP.geometry("300x150")
-    rootPosX = root.winfo_rootx() + 250
-    rootPosY = root.winfo_rooty() + 350
-    screenIP.wm_geometry("+%d+%d" % (rootPosX, rootPosY))
-    screenIP.resizable(False, False)
-    screenIP.grab_set()
-    screenIP.protocol("WM_DELETE_WINDOW", sys.exit)
-    iconIP = PhotoImage(file="icons\\icon.png")
-    screenIP.iconphoto(False, iconIP)
-    labelIP = tkinter.Label(master=screenIP, text="Введите IP адрес климатической установки:")
-    labelIP.place(x=10, y=30, width=280)
-    isvalid = (screenIP.register(Mask), "%P")
-    entryIP = tkinter.Entry(master=screenIP, relief="solid", justify="center",
-                            validate="key", validatecommand=isvalid)
-    entryIP.place(x=10, y=50, width=280)
-    buttonStart = tkinter.Button(master=screenIP, text="Начать опрос", command=GetIP, state="disabled")
-    buttonStart.place(x=10, y=80, width=280)
-    buttonClose = tkinter.Button(master=screenIP, text="Закрыть программу", command=sys.exit)
-    buttonClose.place(x=10, y=110, width=280)
-
-
-def CheckIP():
-    global machineIP, machineName
-    configPath = f"{rootFolder}config.ini"
-    frameIP = pandas.read_csv(configPath, sep=",", encoding="cp1251")
-    if frameIP.empty:
-        InputIP()
-    else:
-        machineIP = frameIP.iloc[-1]["ip"]
-        machineName = frameIP.iloc[-1]["name"]
-        OpenConnection()
-
-
-def DeleteButton():
-    # buttonName.destroy()
-    raise Exception("Abort")
-
-
-def ShowGif():
-    global heatLabel
-    heatLabel = tkinter.Label(root)
-    heatLabel.place(x=340, y=90)
-    UpdateHeat()
-
-
-def HideGif():
-    global heatLabel
-    heatLabel.destroy()
-
-
-def OpenConnection():
-    global machineIP, master, ftp, fileList, csvFolder, xlsFolder
-    try:
-        master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=5)
-        master.set_timeout(5.0)
-    except TimeoutError:
-        ConnectionError()
-        return
-    try:
-        ftp = ftplib.FTP(host=machineIP, timeout=5)
-        ftp.login(user="uploadhis", passwd="111111")
-        ftp.cwd("datalog/data")
-        fileList = ftp.nlst()
-        csvFolder = f"{rootFolder}{machineIP}\\CSV\\"
-        xlsFolder = f"{rootFolder}{machineIP}\\XLS\\"
-    except TimeoutError:
-        ConnectionError()
-        return
-    except AttributeError:
-        ConnectionError()
-        return
-    except ftplib.error_perm:
-        DeviceError()
-        return
-    threadModbus.start() if not threadModbus.is_alive() else None
-    LabelsShow()
-    GraphControl()
-    FTPhistory()
-    CSVhistory()
-    threadFTP.start() if not threadFTP.is_alive() else None
-    GetPeriod()
-    Plot()
-
-
-def ConnectionError():
-    def Countdown():
-        global wait
-        if wait > 1:
-            wait -= 1
-            info["text"] = f"Ошибка соединения...\nПовтор через: {wait}"
-            screenError.after(1000, Countdown)
-        else:
-            RetryConnection()
-    def RetryConnection():
-        screenError.grab_release()
-        screenError.destroy()
-        OpenConnection()
-    def ResetIP():
-        screenError.grab_release()
-        screenError.destroy()
-        InputIP()
-    global wait
-    wait = 10
-    screenError = Toplevel(root)
-    screenError.title("ВНИМАНИЕ")
-    screenError.geometry("300x100")
-    rootPosX = root.winfo_rootx() + 250
-    rootPosY = root.winfo_rooty() + 350
-    screenError.wm_geometry("+%d+%d" % (rootPosX, rootPosY))
-    screenError.resizable(False, False)
-    screenError.grab_set()
-    screenError["bg"] = "yellow"
-    screenError.protocol("WM_DELETE_WINDOW", sys.exit)
-    screenIcon = PhotoImage(file="icons\\icon.png")
-    screenError.iconphoto(False, screenIcon)
-
-    info = tkinter.Label(master=screenError, bg="yellow")
-    info.place(x=10, y=10, width=280)
-    buttonRetry = ttk.Button(master=screenError, text="Повторить", command=RetryConnection)
-    buttonChange = ttk.Button(master=screenError, text="Изменить IP", command=ResetIP)
-    buttonClose = ttk.Button(master=screenError, text="Завершить", command=sys.exit)
-    buttonRetry.place(x=15, y=60, width=80)
-    buttonChange.place(x=110, y=60, width=80)
-    buttonClose.place(x=205, y=60, width=80)
-    screenError.after(50, Countdown)
-
-
-def DeviceError():
-    screenError = Toplevel(root)
-    screenError.title("ВНИМАНИЕ")
-    screenError.geometry("300x100")
-    rootPosX = root.winfo_rootx() + 250
-    rootPosY = root.winfo_rooty() + 350
-    screenError.wm_geometry("+%d+%d" % (rootPosX, rootPosY))
-    screenError.resizable(False, False)
-    screenError.grab_set()
-    screenError["bg"] = "yellow"
-    screenError.protocol("WM_DELETE_WINDOW", sys.exit)
-    screenIcon = PhotoImage(file="icons\\icon.png")
-    screenError.iconphoto(False, screenIcon)
-
-    info = tkinter.Label(master=screenError, bg="yellow", text="Невозможно установить связь!")
-    info.place(x=10, y=10, width=280)
-    buttonClose = ttk.Button(master=screenError, text="Завершить", command=sys.exit)
-    buttonClose.place(x=20, y=60, width=260)
-
-
-def ReadModbusTCP():
-    global panelIP, panelDate, panelTime, currentTime, filename, picname, \
-        temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, modeIndex, statusIndex
-    while True:
-        try:
-            getSys = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10099, 10)
-            getTempCur = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10109, 1)
-            getTempSet = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10110, 1)
-            getHumCur = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10111, 1)
-            getHumSet = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10112, 1)
-            getStatus = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10115, 1)
-            getMode = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10114, 1)
-            panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
-            panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
-            panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
-            currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
-            filename = f"{getSys[6]:04}{getSys[5]:02}{getSys[4]:02}"
-            picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
-            temperatureCurrent = (getTempCur[0] - 2 ** 16) / 10 if getTempCur[0] > 2 ** 15 else getTempCur[0] / 10
-            temperatureSet = (getTempSet[0] - 2 ** 16) / 10 if getTempSet[0] > 2 ** 15 else getTempSet[0] / 10
-            humidityCurrent = getHumCur[0] / 10
-            humiditySet = getHumSet[0]
-            statusIndex = int(getStatus[0])
-            modeIndex = int(getMode[0])
-        except UnboundLocalError:
-            print("Modbus format error")
-        except TimeoutError:
-            ConnectionError()
-            return
-        except ConnectionRefusedError:
-            print("Modbus read error")
-        time.sleep(1)
-
-
-def FTPhistory():
-    try:
-        for fileNum in fileList:
-            remoteFile = fileNum
-            localFile = f"{dtlFolder}{remoteFile}"
-            with open(localFile, "wb") as file:
-                ftp.retrbinary("RETR %s" % remoteFile, file.write)
-    except NameError:
-        DeviceError()
-        return
-    except TimeoutError:
-        ConnectionError()
-        return
-
-
-def CSVhistory():
-    fileList = os.listdir(dtlFolder)
-    for fileNum in fileList:
-        dtlFile = fileNum
-        csvFile = f"{fileNum[:8]}.csv"
-        xlsFile = f"{fileNum[:8]}.xls"
-        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{csvFolder}{csvFile}"', shell=True)
-        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{xlsFolder}{xlsFile}"', shell=True)
-
-
-def CurrentUpdate():
-    while True:
-        try:
-            remoteFile = ''.join(fileList[-1:])
-            localFile = f"{dtlFolder}{remoteFile}"
-            with open(localFile, "wb") as file:
-                ftp.retrbinary("RETR %s" % remoteFile, file.write)
-        except TimeoutError:
-            ConnectionError()
-            return
-        except NameError:
-            DeviceError()
-            return
-        except FileNotFoundError:
-            print("File not found. Need to print error on plot")
-        dtlList = os.listdir(dtlFolder)
-        dtlFile = ''.join(dtlList[-1:])
-        csvFile = f"{dtlFile[:8]}.csv"
-        xlsFile = f"{dtlFile[:8]}.xls"
-        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{csvFolder}{csvFile}"', shell=True)
-        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{xlsFolder}{xlsFile}"', shell=True)
-        time.sleep(5)
-
-
-def WriteFile():
-    os.chdir(f"{rootFolder}_DATA\\")
-    filepath = f"{rootFolder}_DATA/test.csv"
-    with open(filepath, mode="a", encoding="utf-8", newline="") as file:
-        update = csv.writer(file)
-        time = datetime.strptime(panelTime, "%H : %M : %S").time()
-        record = [time, temperatureCurrent]
-        if time.second % 5 == 0:
-            update.writerow(record)
-    # root.after(1000, WriteFile)
-
-
-def GetPeriod():
-    global showSlice, sliceActive, buttonEdit
-    choice = graphLabels.index(graphDefault.get())
-    if (choice == 6) & (showSlice is False):
-        showSlice = True
-        buttonEdit = ttk.Button(command=ShowSlice, style="TButton", text="Изменить диапазон")
-        buttonEdit.place(x=670, y=130, width=300)
-        ShowSlice()
-    if (choice != 6) & (showSlice is True):
-        showSlice = False
-        sliceActive = False
-        buttonEdit.destroy()
-        HideSlice()
-        Plot()
-    root.after(1000, GetPeriod)
-
-
 def Plot():
     global canvasError, showerror, sliceActive, baseMode
     chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
-    # try:
-    #     fileList = os.listdir(csvFolder)
-    #     fileMain = csvFolder + ''.join(fileList[-1])
-    # except FileNotFoundError:
-    #     print("File not found 2. Need to print error on plot")
-    # except IndexError:
-    #     DeviceError()
-    #     return
     try:
         if not sliceActive:
             fileList = os.listdir(csvFolder)
@@ -559,7 +548,6 @@ def Plot():
             else:
                 fileFrom = csvFolder + sliceDateFrom + ".csv"
                 fileTo = csvFolder + sliceDateTo + ".csv"
-                print(fileFrom, ">>>", fileTo)
                 frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
                 frameDataTo = pandas.read_csv(fileTo, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
                 frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
@@ -568,8 +556,7 @@ def Plot():
                 frameLocalTo = frameDataTo.loc[((frameDataTo["Time"] >= "00:00:00") &
                                                 (frameDataTo["Time"] <= sliceTimeTo)), frameColumns]
                 frameCurrent = pandas.concat([frameLocalFrom, frameLocalTo], ignore_index=True)
-                print(frameCurrent)
-                print("Normal reading 2-day slice data")
+                print("Normal reading 2-days slice data")
     except ValueError:
         print("Time read error")
     except FileNotFoundError:
@@ -578,7 +565,7 @@ def Plot():
     except UnboundLocalError:
         print("Time format error. Need to print error on plot")
     except IndexError:
-        DeviceError()
+        DeviceErrorWindow()
         return
     figure.clear()
     lox = matplotlib.ticker.LinearLocator(24)

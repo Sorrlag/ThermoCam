@@ -42,15 +42,21 @@ showSlice = False
 showerror = False
 sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo = "", "", "", ""
 baseMode = "Temperature"
+baseStatus = "Stop"
+heat = False
+cold = False
+idleT = False
+wet = False
+dry = False
+idleH = False
 
 
 def ObjectsPlace():
     logoLabel.place(x=650, y=780)
     panelDateLabel.place(x=880, y=15, width=100)
     panelTimeLabel.place(x=880, y=35, width=100)
-    armIPLabel.place(x=xLabelPos, y=10)
-    panelIPLabel.place(x=xLabelPos, y=30)
-    panelNameLabel.place(x=xLabelPos, y=50)
+    armIPLabel.place(x=xLabelPos, y=15)
+    panelIPLabel.place(x=xLabelPos, y=35)
     statusLabel.place(x=xLabelPos, y=yPos, width=150)
     statusValue.place(x=xValuePos, y=yPos, width=100)
     modeLabel.place(x=xLabelPos, y=yPos + 20, width=150)
@@ -70,7 +76,6 @@ def LabelsShow():
     logoLabel["text"] = f"© 'МИР ОБОРУДОВАНИЯ', Санкт-Петербург, 2024"
     armIPLabel["text"] = f"IP адрес рабочей станции: {localIP}"
     panelIPLabel["text"] = f'IP адрес климатической установки: {panelIP}'
-    panelNameLabel["text"] = f'Наименование: {machineName}'
     panelDateLabel["text"] = panelDate
     panelTimeLabel["text"] = panelTime
     statusLabel["text"] = f"Статус установки:"
@@ -87,6 +92,195 @@ def LabelsShow():
     humSetValue["text"] = f"{humiditySet} °C"
     labelPeriods["text"] = "Диапазон отображения:"
     root.after(1000, LabelsShow)
+
+
+def GlobalStatus():
+
+    def ChangeTempStatus(climate, value):
+        global heat, cold, idleT
+        if value is True:
+            match climate:
+                case "heat":
+                    heat = True
+                    ShowGif("heat")
+                case "cold":
+                    cold = True
+                    ShowGif("cold")
+                case "idleT":
+                    idleT = True
+                    ShowGif("idleT")
+        if value is False:
+            match climate:
+                case "heat":
+                    heat = False
+                    HideGif("heat")
+                case "cold":
+                    cold = False
+                    HideGif("cold")
+                case "idleT":
+                    idleT = False
+                    HideGif("idleT")
+
+    def ChangeHumStatus(climate, value):
+        global wet, dry, idleH
+        if value is True:
+            match climate:
+                case "wet":
+                    wet = True
+                    ShowGif("wet")
+                case "dry":
+                    dry = True
+                    ShowGif("dry")
+                case "idleH":
+                    idleH = True
+                    ShowGif("idleH")
+        if value is False:
+            match climate:
+                case "wet":
+                    wet = False
+                    HideGif("wet")
+                case "dry":
+                    dry = False
+                    HideGif("dry")
+                case "idleH":
+                    idleH = False
+                    HideGif("idleH")
+
+    global baseStatus, baseMode, heat, cold, idleT, wet, dry, idleH, \
+        temperatureCurrent, temperatureSet, humidityCurrent, humiditySet
+    baseStatus = "Run" if statusIndex == 2 else "Stop"
+    if modeIndex == 2:
+        baseMode = "Temperature"
+    if modeIndex == 3:
+        baseMode = "Humidity"
+    if baseStatus == "Run":
+        if temperatureCurrent <= (temperatureSet - 2):
+            ChangeTempStatus("heat", True) if heat is False else None
+        else:
+            ChangeTempStatus("heat", False) if heat is True else None
+        if temperatureCurrent >= (temperatureSet + 2):
+            ChangeTempStatus("cold", True) if cold is False else None
+        else:
+            ChangeTempStatus("cold", False) if cold is True else None
+        if (temperatureCurrent > (temperatureSet - 2)) & (temperatureCurrent < (temperatureSet + 2)):
+            ChangeTempStatus("idleT", True) if idleT is False else None
+        else:
+            ChangeTempStatus("idleT", False) if idleT is True else None
+    else:
+        ChangeTempStatus("heat", False) if heat is True else None
+        ChangeTempStatus("cold", False) if cold is True else None
+        ChangeTempStatus("idleT", False) if idleT is True else None
+
+    if (baseStatus == "Run") & (baseMode == "Humidity"):
+        if humidityCurrent <= (humiditySet - 2):
+            ChangeHumStatus("wet", True) if wet is False else None
+        else:
+            ChangeHumStatus("wet", False) if wet is True else None
+        if humidityCurrent >= (humiditySet + 2):
+            ChangeHumStatus("dry", True) if dry is False else None
+        else:
+            ChangeHumStatus("dry", False) if dry is True else None
+        if (humidityCurrent > (humiditySet - 2)) & (humidityCurrent < (humiditySet + 2)):
+            ChangeHumStatus("idleH", True) if idleH is False else None
+        else:
+            ChangeHumStatus("idleH", False) if idleH is True else None
+    else:
+        ChangeHumStatus("wet", False) if wet is True else None
+        ChangeHumStatus("dry", False) if dry is True else None
+        ChangeHumStatus("idleH", False) if idleH is True else None
+
+    root.after(1000, GlobalStatus)
+
+
+def ShowGif(ani):
+    global heatLabel, coldLabel, idleTempLabel, wetLabel, dryLabel, idleHumLabel
+    match ani:
+        case "heat":
+            heatLabel = tkinter.Label(root)
+            heatLabel.place(x=380, y=10)
+            UpdateGif("heat")
+        case "cold":
+            coldLabel = tkinter.Label(root)
+            coldLabel.place(x=380, y=10)
+            UpdateGif("cold")
+        case "idleT":
+            idleTempLabel = tkinter.Label(root)
+            idleTempLabel.place(x=380, y=10)
+            UpdateGif("idleT")
+        case "wet":
+            wetLabel = tkinter.Label(root)
+            wetLabel.place(x=480, y=10)
+            UpdateGif("wet")
+        case "dry":
+            dryLabel = tkinter.Label(root)
+            dryLabel.place(x=480, y=10)
+            UpdateGif("dry")
+        case "idleH":
+            idleHumLabel = tkinter.Label(root)
+            idleHumLabel.place(x=480, y=10)
+            UpdateGif("idleH")
+
+
+def HideGif(ani):
+    global heatLabel, coldLabel, idleTempLabel, wetLabel, dryLabel, idleHumLabel
+    match ani:
+        case "heat":
+            heatLabel.destroy()
+        case "cold":
+            coldLabel.destroy()
+        case "idleT":
+            idleTempLabel.destroy()
+        case "wet":
+            wetLabel.destroy()
+        case "dry":
+            dryLabel.destroy()
+        case "idleH":
+            idleHumLabel.destroy()
+
+
+def UpdateGif(ani, index=0):
+    try:
+        match ani:
+            case "heat":
+                framePic = framesHeat[index]
+                index += 1
+                if index == 14:
+                    index = 0
+                heatLabel.configure(image=framePic, borderwidth=0)
+            case "cold":
+                framePic = framesCold[index]
+                index += 1
+                if index == 10:
+                    index = 0
+                coldLabel.configure(image=framePic, borderwidth=0)
+            case "idleT":
+                framePic = framesIdleT[index]
+                index += 1
+                if index == 11:
+                    index = 0
+                idleTempLabel.configure(image=framePic, borderwidth=0)
+            case "wet":
+                framePic = framesWet[index]
+                index += 1
+                if index == 12:
+                    index = 0
+                wetLabel.configure(image=framePic, borderwidth=0)
+            case "dry":
+                framePic = framesDry[index]
+                index += 1
+                if index == 10:
+                    index = 0
+                dryLabel.configure(image=framePic, borderwidth=0)
+            case "idleH":
+                framePic = framesIdleH[index]
+                index += 1
+                if index == 11:
+                    index = 0
+                idleHumLabel.configure(image=framePic, borderwidth=0)
+        root.after(50, UpdateGif, ani, index)
+    except Exception:
+        print("error")
+        return
 
 
 def GetLocalIP():
@@ -152,24 +346,13 @@ def DeleteButton():
     raise Exception("Abort")
 
 
-def ShowGif():
-    global heatLabel
-    heatLabel = tkinter.Label(root)
-    heatLabel.place(x=340, y=90)
-    UpdateHeat()
-
-
-def HideGif():
-    global heatLabel
-    heatLabel.destroy()
-
-
 def OpenConnection():
     global machineIP, master, ftp, fileList, csvFolder, xlsFolder
     try:
         master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=5)
         master.set_timeout(5.0)
     except TimeoutError:
+        print("4")
         ConnectionErrorWindow()
         return
     try:
@@ -180,9 +363,11 @@ def OpenConnection():
         csvFolder = f"{rootFolder}{machineIP}\\CSV\\"
         xlsFolder = f"{rootFolder}{machineIP}\\XLS\\"
     except TimeoutError:
+        print("5")
         ConnectionErrorWindow()
         return
     except AttributeError:
+        print("6")
         ConnectionErrorWindow()
         return
     except ftplib.error_perm:
@@ -190,11 +375,12 @@ def OpenConnection():
         return
     threadModbus.start() if not threadModbus.is_alive() else None
     LabelsShow()
-    GraphControl()
+    UserControl()
     HistoryFTP()
     HistoryCSV()
     threadFTP.start() if not threadFTP.is_alive() else None
     GetPeriod()
+    GlobalStatus()
     Plot()
 
 
@@ -288,6 +474,7 @@ def ReadModbusTCP():
         except UnboundLocalError:
             print("Modbus format error")
         except TimeoutError:
+            print("1")
             ConnectionErrorWindow()
             return
         except ConnectionRefusedError:
@@ -306,6 +493,7 @@ def HistoryFTP():
         DeviceErrorWindow()
         return
     except TimeoutError:
+        print("2")
         ConnectionErrorWindow()
         return
 
@@ -328,6 +516,7 @@ def CurrentUpdate():
             with open(localFile, "wb") as file:
                 ftp.retrbinary("RETR %s" % remoteFile, file.write)
         except TimeoutError:
+            print("3")
             ConnectionErrorWindow()
             return
         except NameError:
@@ -356,7 +545,7 @@ def WriteFile():
     # root.after(1000, WriteFile)
 
 
-def GraphControl():
+def UserControl():
     global graphLabels, graphPeriods, graphDefault
     graphLabels = ["5 минут", "15 минут", "30 минут", "1 час", "2 часа", "4 часа", "<Настроить>"]
     graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:01:00"]
@@ -365,7 +554,11 @@ def GraphControl():
                                background=bgLoc, foreground=bgLoc)
     graphPeriod.place(x=820, y=90)
     # buttonSave.place(x=670, y=220, width=300)
-    buttonName.place(x=400, y=10, width=200)
+    buttonName.place(x=360, y=90, width=240)
+    buttonStatus.place(x=360, y=140, width=240)
+    buttonSpeed.place(x=360, y=170, width=240)
+    buttonSetTemp.place(x=360, y=200, width=240)
+    buttonSetHum.place(x=360, y=230, width=240)
 
 
 def GetPeriod():
@@ -574,25 +767,25 @@ def Plot():
     graphTemp.set_facecolor(bgLoc)
     graphTemp.set_title(machineName, color="yellow")
     try:
-        if modeIndex == 2:
-            baseMode = "Temperature"
-        if modeIndex == 3:
-            baseMode = "Humidity"
+        # if modeIndex == 2:
+        #     baseMode = "Temperature"
+        # if modeIndex == 3:
+        #     baseMode = "Humidity"
         graphTemp.plot(frameCurrent["Time"], frameCurrent["TemperatureCurrent"], "-w",
-                            frameCurrent["Time"], frameCurrent["TemperatureSet"], "--c")
+                       frameCurrent["Time"], frameCurrent["TemperatureSet"], "--c")
         graphTemp.set_ylabel("Температура, °C", color="white")
         graphTemp.grid(alpha=0.5, linestyle="-", color="cyan", linewidth=0.3)
         graphTemp.tick_params(labelsize=8, colors="yellow")
         if baseMode == "Temperature":
             graphTemp.fill_between(x=frameCurrent["Time"], y1=frameCurrent["TemperatureCurrent"],
-                               y2=frameCurrent["TemperatureSet"], alpha=0.2)
+                                   y2=frameCurrent["TemperatureSet"], alpha=0.2)
         if baseMode == "Humidity":
             graphHum = graphTemp.twinx()
             graphHum.set_ylabel("Влажность, %", color="red")
             graphHum.plot(frameCurrent["Time"], frameCurrent["HumidityCurrent"], "-r",
-                      frameCurrent["Time"], frameCurrent["HumiditySet"], "--m")
+                          frameCurrent["Time"], frameCurrent["HumiditySet"], "--m")
             graphHum.fill_between(x=frameCurrent["Time"], y1=frameCurrent["HumidityCurrent"],
-                              y2=frameCurrent["HumiditySet"], alpha=0.2)
+                                  y2=frameCurrent["HumiditySet"], alpha=0.2)
             graphHum.grid(alpha=0.6, linestyle=":", color="red")
             graphHum.tick_params(labelsize=8, colors="yellow")
     except UnboundLocalError:
@@ -624,62 +817,6 @@ def SaveFigure():
     figure.savefig(f"{picFolder}{picname}")
 
 
-def UpdateHeat(index=0):
-    try:
-        framePic = framesHeat[index]
-        index += 1
-        if index == 14:
-            index = 0
-        heatLabel.configure(image=framePic, borderwidth=0)
-        root.after(50, UpdateHeat, index)
-    except Exception:
-        print("error")
-        return
-
-
-def UpdateCold(index=0):
-    framePic = framesCold[index]
-    index += 1
-    if index == 10:
-        index = 0
-    coldLabel.configure(image=framePic, borderwidth=0)
-    root.after(100, UpdateCold, index)
-
-
-def UpdateWet(index=0):
-    framePic = framesWet[index]
-    index += 1
-    if index == 12:
-        index = 0
-    wetLabel.configure(image=framePic, borderwidth=0)
-    root.after(100, UpdateWet, index)
-
-
-def UpdateDry(index=0):
-    framePic = framesDry[index]
-    index += 1
-    if index == 10:
-        index = 0
-    dryLabel.configure(image=framePic, borderwidth=0)
-    root.after(100, UpdateDry, index)
-
-
-def UpdateIdleTemp(index=0):
-    framePic = framesIdle[index]
-    index += 1
-    if index == 12:
-        index = 0
-    idleTempLabel.configure(image=framePic, borderwidth=0)
-    root.after(100, UpdateIdleTemp, index)
-
-
-def UpdateIdleHum(index=0):
-    framePic = framesIdle[index]
-    index += 1
-    if index == 12:
-        index = 0
-    idleHumLabel.configure(image=framePic, borderwidth=0)
-    root.after(100, UpdateIdleHum, index)
 
 
 root = Tk()
@@ -704,36 +841,17 @@ canvas.create_rectangle(10, 200, 980, 690, fill="#510D70", outline="#510D70")
 
 framesHeat = [PhotoImage(file="icons\\heat.gif", format="gif -index %i" %(i)) for i in range(15)]
 framesCold = [PhotoImage(file="icons\\cold.gif", format="gif -index %i" %(i)) for i in range(10)]
+framesIdleT = [PhotoImage(file="icons\\idleT.gif", format="gif -index %i" %(i)) for i in range(11)]
 framesWet = [PhotoImage(file="icons\\wet.gif", format="gif -index %i" %(i)) for i in range(12)]
 framesDry = [PhotoImage(file="icons\\dry.gif", format="gif -index %i" %(i)) for i in range(10)]
-framesIdle = [PhotoImage(file="icons\\idle.gif", format="gif -index %i" %(i)) for i in range(12)]
-# heatLabel = tkinter.Label(root)
-coldLabel = tkinter.Label(root)
-wetLabel = tkinter.Label(root)
-dryLabel = tkinter.Label(root)
-idleTempLabel = tkinter.Label(root)
-idleHumLabel = tkinter.Label(root)
-# heatLabel.place(x=340, y=90)
-# coldLabel.place(x=440, y=90)
-# idleTempLabel.place(x=540, y=90)
-# wetLabel.place(x=340, y=180)
-# dryLabel.place(x=440, y=180)
-# idleHumLabel.place(x=540, y=180)
+framesIdleH = [PhotoImage(file="icons\\idleH.gif", format="gif -index %i" %(i)) for i in range(11)]
 
 threadModbus = threading.Thread(target=ReadModbusTCP, daemon=True, name="modbus")
 threadFTP = threading.Thread(target=CurrentUpdate, daemon=True, name='ftp')
 
-# root.after(0, UpdateHeat)
-# root.after(0, UpdateCold)
-# root.after(0, UpdateIdleTemp)
-# root.after(0, UpdateWet)
-# root.after(0, UpdateDry)
-# root.after(0, UpdateIdleHum)
-
 logoLabel = Label(font=("Arial", 10, "bold"), fg=fgComm, bg=bgGlob)
 armIPLabel = Label(fg=fgComm, bg=bgGlob)
 panelIPLabel = Label(fg=fgComm, bg=bgGlob)
-panelNameLabel = Label(fg=fgComm, bg=bgGlob)
 panelDateLabel = Label(fg=fgComm, bg=bgGlob, anchor="e")
 panelTimeLabel = Label(fg=fgComm, bg=bgGlob, anchor="e")
 statusLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
@@ -758,9 +876,10 @@ canvasError = tkinter.Canvas(master=root, bg="red", width=100, height=100)
 ttk.Style().configure("TButton", font="helvetica 8", background=bgGlob, relief="sunken")
 buttonSave = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
 buttonName = ttk.Button(command=DeleteButton, style="TButton", text="Задать наименование установки")
-
-b1 = ttk.Button(command=ShowGif).place(x=700, y=10, width=50)
-b2 = ttk.Button(command=HideGif).place(x=700, y=30, width=50)
+buttonStatus = ttk.Button(style="TButton", text="ПУСК / СТОП", state="disabled")
+buttonSpeed = ttk.Button(style="TButton", text="Активировать контроль скорости", state="disabled")
+buttonSetTemp = ttk.Button(style="TButton", text="Сменить уставку по температуре", state="disabled")
+buttonSetHum = ttk.Button(style="TButton", text="Сменить уставку по влажности", state="disabled")
 
 ObjectsPlace()
 GetLocalIP()

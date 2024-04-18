@@ -304,10 +304,12 @@ def InputIP():
         screenIP.grab_release()
         screenIP.destroy()
         CheckIP()
+
     def Mask(ip):
         validIP = re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ip)
         buttonStart["state"] = "normal" if validIP is not None else "disabled"
         return True
+
     screenIP = Toplevel(root)
     screenIP.title("Введите IP")
     screenIP.geometry("300x150")
@@ -352,13 +354,13 @@ def OpenConnection():
     global machineIP, master, ftp, fileList, csvFolder, xlsFolder
     try:
         master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=5)
-        master.set_timeout(5.0)
+        master.set_timeout(8.0)
     except TimeoutError:
         print("4")
         ConnectionErrorWindow()
         return
     try:
-        ftp = ftplib.FTP(host=machineIP, timeout=5)
+        ftp = ftplib.FTP(host=machineIP, timeout=8)
         ftp.login(user="uploadhis", passwd="111111")
         ftp.cwd("datalog/data")
         fileList = ftp.nlst()
@@ -387,6 +389,7 @@ def OpenConnection():
 
 
 def ConnectionErrorWindow():
+
     def Countdown():
         global wait
         if wait > 1:
@@ -395,14 +398,17 @@ def ConnectionErrorWindow():
             screenError.after(1000, Countdown)
         else:
             RetryConnection()
+
     def RetryConnection():
         screenError.grab_release()
         screenError.destroy()
         OpenConnection()
+
     def ResetIP():
         screenError.grab_release()
         screenError.destroy()
         InputIP()
+
     global wait
     wait = 10
     screenError = Toplevel(root)
@@ -565,6 +571,7 @@ def UserControl():
 
 
 def GetPeriod():
+
     def StartStopPlot():
         global online
         online = not online
@@ -753,7 +760,6 @@ def Plot():
         else:
             if sliceDateFrom == sliceDateTo:
                 fileMain = csvFolder + sliceDateFrom + ".csv"
-                print(fileMain)
                 frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
                 frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
                 frameCurrent = frameData.loc[(frameData["Time"] >= sliceTimeFrom) &
@@ -762,17 +768,16 @@ def Plot():
             else:
                 fileFrom = csvFolder + sliceDateFrom + ".csv"
                 fileTo = csvFolder + sliceDateTo + ".csv"
-                frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
-                frameDataTo = pandas.read_csv(fileTo, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
-                frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
-                frameLocalFrom = frameDataFrom.loc[((frameDataFrom["Time"] >= sliceTimeFrom) &
-                                                    (frameDataFrom["Time"] <= "23:59:59")), frameColumns]
-                frametemp = frameDataFrom.iloc[(frameDataFrom.index == 5), frameColumns]
-                print(frameLocalFrom)
-                print(frametemp)
-                frameLocalTo = frameDataTo.loc[((frameDataTo["Time"] >= "00:00:00") &
-                                                (frameDataTo["Time"] <= sliceTimeTo)), frameColumns]
-                frameCurrent = pandas.concat([frameLocalFrom, frameLocalTo], ignore_index=True)
+                frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
+                frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
+                frameColumns = ["Date", "Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
+                frameLocalFrom = pandas.DataFrame(frameDataFrom.loc[((frameDataFrom["Time"] >= sliceTimeFrom) &
+                                                                     (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
+                frameLocalTo = pandas.DataFrame(frameDataTo.loc[((frameDataTo["Time"] >= "00:00:00") &
+                                                                 (frameDataTo["Time"] <= sliceTimeTo)), frameColumns])
+                frameFrom = frameLocalFrom.loc[(frameLocalFrom.index % 2 == 0), frameColumns]
+                frameTo = frameLocalTo.loc[(frameLocalTo.index % 2 == 0), frameColumns]
+                frameCurrent = pandas.concat([frameFrom, frameTo], ignore_index=True)
                 print("Normal reading 2-days slice data")
     except ValueError:
         print("Time read error")

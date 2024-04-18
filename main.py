@@ -12,7 +12,7 @@ from tkinter import *
 from tkinter import ttk
 import re
 from datetime import datetime, timedelta
-import modbus_tk.defines as comfunc
+import modbus_tk.defines as communicate
 import modbus_tk.modbus_tcp as modbus_tcp
 import matplotlib.ticker
 import matplotlib.dates
@@ -39,7 +39,8 @@ machineIP, machineName = "", ""
 sliceActive = False
 sliceChange = False
 showSlice = False
-showerror = False
+showError = False
+showButton = False
 sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo = "", "", "", ""
 baseMode = "Temperature"
 baseStatus = "Stop"
@@ -49,6 +50,7 @@ idleT = False
 wet = False
 dry = False
 idleH = False
+online = True
 
 
 def ObjectsPlace():
@@ -277,7 +279,7 @@ def UpdateGif(ani, index=0):
                 if index == 11:
                     index = 0
                 idleHumLabel.configure(image=framePic, borderwidth=0)
-        root.after(50, UpdateGif, ani, index)
+        root.after(100, UpdateGif, ani, index)
     except Exception:
         print("error")
         return
@@ -452,13 +454,13 @@ def ReadModbusTCP():
         temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, modeIndex, statusIndex
     while True:
         try:
-            getSys = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10099, 10)
-            getTempCur = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10109, 1)
-            getTempSet = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10110, 1)
-            getHumCur = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10111, 1)
-            getHumSet = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10112, 1)
-            getStatus = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10115, 1)
-            getMode = master.execute(1, comfunc.READ_INPUT_REGISTERS, 10114, 1)
+            getSys = master.execute(1, communicate.READ_INPUT_REGISTERS, 10099, 10)
+            getTempCur = master.execute(1, communicate.READ_INPUT_REGISTERS, 10109, 1)
+            getTempSet = master.execute(1, communicate.READ_INPUT_REGISTERS, 10110, 1)
+            getHumCur = master.execute(1, communicate.READ_INPUT_REGISTERS, 10111, 1)
+            getHumSet = master.execute(1, communicate.READ_INPUT_REGISTERS, 10112, 1)
+            getStatus = master.execute(1, communicate.READ_INPUT_REGISTERS, 10115, 1)
+            getMode = master.execute(1, communicate.READ_INPUT_REGISTERS, 10114, 1)
             panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
             panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
             panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
@@ -550,19 +552,25 @@ def UserControl():
     graphLabels = ["5 минут", "15 минут", "30 минут", "1 час", "2 часа", "4 часа", "<Настроить>"]
     graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:01:00"]
     graphDefault = StringVar(value=graphLabels[0])
-    graphPeriod = ttk.Combobox(values=graphLabels, textvariable=graphDefault, width=22, state="readonly",
+    graphPeriod = ttk.Combobox(values=graphLabels, textvariable=graphDefault, width=21, state="readonly",
                                background=bgLoc, foreground=bgLoc)
     graphPeriod.place(x=820, y=90)
-    # buttonSave.place(x=670, y=220, width=300)
+    buttonSave.place(x=830, y=225, width=140, height=30)
     buttonName.place(x=360, y=90, width=240)
     buttonStatus.place(x=360, y=140, width=240)
     buttonSpeed.place(x=360, y=170, width=240)
     buttonSetTemp.place(x=360, y=200, width=240)
     buttonSetHum.place(x=360, y=230, width=240)
+    navi.place(x=670, y=220, width=155, height=40)
 
 
 def GetPeriod():
-    global showSlice, sliceActive, buttonEdit
+    def StartStopPlot():
+        global online
+        online = not online
+        Plot() if online else None
+
+    global showSlice, sliceActive, buttonEdit, buttonOnline, online, showButton
     choice = graphLabels.index(graphDefault.get())
     if (choice == 6) & (showSlice is False):
         showSlice = True
@@ -575,17 +583,30 @@ def GetPeriod():
         buttonEdit.destroy()
         HideSlice()
         Plot()
+    if choice != 6:
+        if showButton is False:
+            buttonOnline = ttk.Button(root, style="TButton", command=StartStopPlot)
+            buttonOnline.place(x=670, y=180, width=300)
+            showButton = True
+        buttonOnline["text"] = "Остановить выборку в реальном времени" if online \
+            else "Возобновить выборку в реальном времени"
+    if (choice == 6) & showButton is True:
+        buttonOnline.destroy()
+        showButton = False
+
     root.after(1000, GetPeriod)
 
 
 def ShowSlice():
     def GetSlice():
-        global sliceActive, sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo
+        global sliceActive, sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo, online
         sliceDateFrom = "2024"+monthFrom.get()+dayFrom.get()
         sliceTimeFrom = f"{hourFrom.get()}:{minutesFrom.get()}:00"
         sliceDateTo = "2024"+monthTo.get()+dayTo.get()
         sliceTimeTo = f"{hourTo.get()}:{minutesTo.get()}:00"
         sliceActive = True
+        online = True
+        Plot()
         HideSlice()
 
     def TimeValidControl():
@@ -716,7 +737,7 @@ def HideSlice():
 
 
 def Plot():
-    global canvasError, showerror, sliceActive, baseMode
+    global canvasError, showError, sliceActive, baseMode, online
     chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
     try:
         if not sliceActive:
@@ -746,6 +767,9 @@ def Plot():
                 frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
                 frameLocalFrom = frameDataFrom.loc[((frameDataFrom["Time"] >= sliceTimeFrom) &
                                                     (frameDataFrom["Time"] <= "23:59:59")), frameColumns]
+                frametemp = frameDataFrom.iloc[(frameDataFrom.index == 5), frameColumns]
+                print(frameLocalFrom)
+                print(frametemp)
                 frameLocalTo = frameDataTo.loc[((frameDataTo["Time"] >= "00:00:00") &
                                                 (frameDataTo["Time"] <= sliceTimeTo)), frameColumns]
                 frameCurrent = pandas.concat([frameLocalFrom, frameLocalTo], ignore_index=True)
@@ -767,10 +791,6 @@ def Plot():
     graphTemp.set_facecolor(bgLoc)
     graphTemp.set_title(machineName, color="yellow")
     try:
-        # if modeIndex == 2:
-        #     baseMode = "Temperature"
-        # if modeIndex == 3:
-        #     baseMode = "Humidity"
         graphTemp.plot(frameCurrent["Time"], frameCurrent["TemperatureCurrent"], "-w",
                        frameCurrent["Time"], frameCurrent["TemperatureSet"], "--c")
         graphTemp.set_ylabel("Температура, °C", color="white")
@@ -792,21 +812,22 @@ def Plot():
         print("Plot error. Need to print error on plot")
     except TypeError:
         print("Error read data. Need to print error on plot")
-        if showerror is False:
+        if showError is False:
             canvasError = tkinter.Canvas(master=root, bg="yellow", width=100, height=100)
             labelError = tkinter.Label(master=canvasError, bg="yellow", fg="red", text="Ошибка чтения данных...")
             labelError.pack(fill=BOTH, expand=True)
             canvasError.place(x=430, y=500)
-            showerror = True
+            showError = True
     else:
-        if showerror is True:
+        if showError is True:
             canvasError.destroy()
-            showerror = False
+            showError = False
     figure.autofmt_xdate()
     canvasGraph.draw()
     canvasGraph.get_tk_widget().place(x=20, y=290)
+    if online is False:
+        return
     if sliceActive:
-        # NavigationToolbar2Tk(canvasGraph)
         return
 
     root.after(5000, Plot)
@@ -815,8 +836,6 @@ def Plot():
 def SaveFigure():
     os.mkdir(picFolder) if not os.path.isdir(picFolder) else None
     figure.savefig(f"{picFolder}{picname}")
-
-
 
 
 root = Tk()
@@ -870,6 +889,8 @@ labelPeriods = Label(anchor="w", fg=fgComm, bg=bgLoc)
 
 figure = Figure(figsize=(9.5, 4.7), dpi=100, facecolor=bgLoc)
 canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
+navi = NavigationToolbar2Tk(canvasGraph)
+navi.configure(background=bgLoc)
 
 canvasError = tkinter.Canvas(master=root, bg="red", width=100, height=100)
 

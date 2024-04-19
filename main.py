@@ -27,6 +27,7 @@ fgComm, fgVal, bgGlob, bgLoc = "white", "yellow", "#2B0542", "#510D70"
 status = ("НЕТ СВЯЗИ", "АВАРИЯ", "РАБОТА", "ОСТАНОВ")
 mode = ("НЕТ СВЯЗИ", "НАСТРОЙКА", "ТЕРМО", "ВЛАГА")
 statusIndex, modeIndex = 0, 0
+listIP = {}
 temperatureCurrent, temperatureSet = -1.1, -1.1
 humidityCurrent, humiditySet = 1.1, 1.1
 rootFolder = f"C:\\Cont\\"
@@ -275,6 +276,11 @@ def UpdateGif(ani, index=0):
         return
 
 
+def ChangeName():
+    # buttonName.destroy()
+    raise Exception("Abort")
+
+
 def GetLocalIP():
     global localIP
     hostname = socket.gethostname()
@@ -284,13 +290,12 @@ def GetLocalIP():
 def InputIP():
     def GetIP():
         global machineIP
-        stringIP = entryIP.get()
-        record = [stringIP, "Климатическая установка"]
-        configPath = f"{rootFolder}config.ini"
-        with open(configPath, mode="a", newline="") as configFile:
-            writeIP = csv.writer(configFile)
-            writeIP.writerow(record)
-        machineIP = stringIP
+        machineIP = entryIP.get()
+        # record = [machineIP, "Климатическая установка"]
+        # configPath = f"{rootFolder}config.ini"
+        # with open(configPath, mode="a", newline="") as configFile:
+        #     writeIP = csv.writer(configFile)
+        #     writeIP.writerow(record)
         screenIP.grab_release()
         screenIP.destroy()
         CheckIP()
@@ -324,24 +329,21 @@ def InputIP():
 
 
 def CheckIP():
-    global machineIP, machineName
+    global machineIP, machineName, frameIP
     configPath = f"{rootFolder}config.ini"
     frameIP = pandas.read_csv(configPath, sep=",", encoding="cp1251")
     if frameIP.empty:
-        InputIP()
+        if machineIP == "":
+            InputIP()
+        else:
+            OpenConnection()
     else:
-        machineIP = frameIP.iloc[-1]["ip"]
-        machineName = frameIP.iloc[-1]["name"]
         OpenConnection()
-
-
-def DeleteButton():
-    # buttonName.destroy()
-    raise Exception("Abort")
 
 
 def OpenConnection():
     global machineIP, master, ftp, fileList, csvFolder, xlsFolder
+
     try:
         master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=5)
         master.set_timeout(8.0)
@@ -350,6 +352,7 @@ def OpenConnection():
         ConnectionErrorWindow()
         return
     try:
+        print(machineIP)
         ftp = ftplib.FTP(host=machineIP, timeout=8)
         ftp.login(user="uploadhis", passwd="111111")
         ftp.cwd("datalog/data")
@@ -367,6 +370,7 @@ def OpenConnection():
     except ftplib.error_perm:
         DeviceErrorWindow()
         return
+    UpdateList()
     threadModbus.start() if not threadModbus.is_alive() else None
     LabelsShow()
     UserControl()
@@ -376,6 +380,23 @@ def OpenConnection():
     GetPeriod()
     GlobalStatus()
     Plot()
+
+
+def UpdateList():
+    global machineIP, machineName, frameIP
+    if frameIP.empty:
+        record = [machineIP, "Климатическая установка"]
+        configPath = f"{rootFolder}config.ini"
+        with open(configPath, mode="a", newline="") as configFile:
+            writeIP = csv.writer(configFile)
+            writeIP.writerow(record)
+    else:
+        for ip in frameIP.index:
+            listIP[frameIP.loc[ip, "ip"]] = frameIP.loc[ip, "name"]
+            listIP[machineIP] = "Климатическая установка"
+    print(listIP)
+    machineIP = frameIP.iloc[-1]["ip"]
+    machineName = frameIP.iloc[-1]["name"]
 
 
 def ConnectionErrorWindow():
@@ -557,6 +578,8 @@ def UserControl():
     buttonSpeed.place(x=360, y=170, width=240)
     buttonSetTemp.place(x=360, y=200, width=240)
     buttonSetHum.place(x=360, y=230, width=240)
+    navi = NavigationToolbar2Tk(canvasGraph)
+    navi.configure(background=bgLoc)
     navi.place(x=670, y=220, width=155, height=40)
 
 
@@ -892,14 +915,12 @@ labelPeriods = Label(anchor="w", fg=fgComm, bg=bgLoc)
 
 figure = Figure(figsize=(9.5, 4.7), dpi=100, facecolor=bgLoc)
 canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
-navi = NavigationToolbar2Tk(canvasGraph)
-navi.configure(background=bgLoc)
 
 canvasError = tkinter.Canvas(master=root, bg="red", width=100, height=100)
 
 ttk.Style().configure("TButton", font="helvetica 8", background=bgGlob, relief="sunken")
 buttonSave = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
-buttonName = ttk.Button(command=DeleteButton, style="TButton", text="Задать наименование установки")
+buttonName = ttk.Button(command=ChangeName, style="TButton", text="Задать наименование установки")
 buttonStatus = ttk.Button(style="TButton", text="ПУСК / СТОП", state="disabled")
 buttonSpeed = ttk.Button(style="TButton", text="Активировать контроль скорости", state="disabled")
 buttonSetTemp = ttk.Button(style="TButton", text="Сменить уставку по температуре", state="disabled")

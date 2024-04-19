@@ -36,29 +36,20 @@ dtlFolder = f"{rootFolder}Converter\\data\\"
 csvFolder = f"{rootFolder}\\CSV\\"
 xlsFolder = f"{rootFolder}\\XLS\\"
 machineIP, machineName = "", ""
-sliceActive = False
-sliceChange = False
-showSlice = False
-showError = False
-showButton = False
+sliceActive = sliceChange = showSlice = showError = showButton = False
 sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo = "", "", "", ""
-baseMode = "Temperature"
-baseStatus = "Stop"
-heat = False
-cold = False
-idleT = False
-wet = False
-dry = False
-idleH = False
+baseMode, baseStatus = "Temperature", "Stop"
+heat = cold = idleT = wet = dry = idleH = False
 online = True
+humidity = False
 
 
 def ObjectsPlace():
     logoLabel.place(x=650, y=780)
     panelDateLabel.place(x=880, y=15, width=100)
     panelTimeLabel.place(x=880, y=35, width=100)
-    armIPLabel.place(x=xLabelPos, y=15)
-    panelIPLabel.place(x=xLabelPos, y=35)
+    armIPLabel.place(x=350, y=15)
+    panelIPLabel.place(x=350, y=35)
     statusLabel.place(x=xLabelPos, y=yPos, width=150)
     statusValue.place(x=xValuePos, y=yPos, width=100)
     modeLabel.place(x=xLabelPos, y=yPos + 20, width=150)
@@ -155,7 +146,7 @@ def GlobalStatus():
         baseMode = "Temperature"
     if modeIndex == 3:
         baseMode = "Humidity"
-    if baseStatus == "Run":
+    if (baseStatus == "Run") & (modeIndex >= 2):
         if temperatureCurrent <= (temperatureSet - 2):
             ChangeTempStatus("heat", True) if heat is False else None
         else:
@@ -173,7 +164,7 @@ def GlobalStatus():
         ChangeTempStatus("cold", False) if cold is True else None
         ChangeTempStatus("idleT", False) if idleT is True else None
 
-    if (baseStatus == "Run") & (baseMode == "Humidity"):
+    if (baseStatus == "Run") & (modeIndex == 3):
         if humidityCurrent <= (humiditySet - 2):
             ChangeHumStatus("wet", True) if wet is False else None
         else:
@@ -199,27 +190,27 @@ def ShowGif(ani):
     match ani:
         case "heat":
             heatLabel = tkinter.Label(root)
-            heatLabel.place(x=380, y=10)
+            heatLabel.place(x=50, y=10)
             UpdateGif("heat")
         case "cold":
             coldLabel = tkinter.Label(root)
-            coldLabel.place(x=380, y=10)
+            coldLabel.place(x=50, y=10)
             UpdateGif("cold")
         case "idleT":
             idleTempLabel = tkinter.Label(root)
-            idleTempLabel.place(x=380, y=10)
+            idleTempLabel.place(x=50, y=10)
             UpdateGif("idleT")
         case "wet":
             wetLabel = tkinter.Label(root)
-            wetLabel.place(x=480, y=10)
+            wetLabel.place(x=190, y=10)
             UpdateGif("wet")
         case "dry":
             dryLabel = tkinter.Label(root)
-            dryLabel.place(x=480, y=10)
+            dryLabel.place(x=190, y=10)
             UpdateGif("dry")
         case "idleH":
             idleHumLabel = tkinter.Label(root)
-            idleHumLabel.place(x=480, y=10)
+            idleHumLabel.place(x=190, y=10)
             UpdateGif("idleH")
 
 
@@ -281,7 +272,6 @@ def UpdateGif(ani, index=0):
                 idleHumLabel.configure(image=framePic, borderwidth=0)
         root.after(100, UpdateGif, ani, index)
     except Exception:
-        print("error")
         return
 
 
@@ -589,6 +579,7 @@ def GetPeriod():
         sliceActive = False
         buttonEdit.destroy()
         HideSlice()
+        print("This one 1")
         Plot()
     if choice != 6:
         if showButton is False:
@@ -605,14 +596,18 @@ def GetPeriod():
 
 
 def ShowSlice():
-    def GetSlice():
-        global sliceActive, sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo, online
+
+    def GetSlice(climate):
+        global sliceActive, sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo, online, humidity
         sliceDateFrom = "2024"+monthFrom.get()+dayFrom.get()
         sliceTimeFrom = f"{hourFrom.get()}:{minutesFrom.get()}:00"
         sliceDateTo = "2024"+monthTo.get()+dayTo.get()
         sliceTimeTo = f"{hourTo.get()}:{minutesTo.get()}:00"
         sliceActive = True
         online = True
+        humidity = climate
+        print(climate)
+        print("This one 2")
         Plot()
         HideSlice()
 
@@ -688,8 +683,10 @@ def ShowSlice():
 
     sliceFrame = tkinter.Frame(master=root, borderwidth=1, width=300, height=140, bg=bgLoc)
     sliceFrame.place(x=670, y=120)
-    ttk.Button(master=sliceFrame, text="Сформировать график", command=GetSlice, style="TButton")\
-        .place(x=0, y=110, width=300, height=25)
+    ttk.Button(master=sliceFrame, text="< °C >", command=lambda: GetSlice(False), style="TButton")\
+        .place(x=0, y=110, width=150, height=25)
+    ttk.Button(master=sliceFrame, text="< °C > + < %RH >", command=lambda: GetSlice(True), style="TButton") \
+        .place(x=160, y=110, width=150, height=25)
 
     tkinter.Label(master=sliceFrame, text="Начало выборки", anchor="w", bg=bgLoc, fg="white").place(x=0, y=10, height=20)
     tkinter.Label(master=sliceFrame, text="Дата:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=0, width=50, height=20)
@@ -744,7 +741,7 @@ def HideSlice():
 
 
 def Plot():
-    global canvasError, showError, sliceActive, baseMode, online
+    global canvasError, showError, sliceActive, baseMode, online, humidity
     chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
     try:
         if not sliceActive:
@@ -756,7 +753,7 @@ def Plot():
             frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
             frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
             frameCurrent = frameData.loc[frameData["Time"] >= timeBegin, frameColumns]
-            print("Normal reading data")
+            print("Normal reading data >>>", timeNow.time())
         else:
             if sliceDateFrom == sliceDateTo:
                 fileMain = csvFolder + sliceDateFrom + ".csv"
@@ -801,10 +798,10 @@ def Plot():
         graphTemp.set_ylabel("Температура, °C", color="white")
         graphTemp.grid(alpha=0.5, linestyle="-", color="cyan", linewidth=0.3)
         graphTemp.tick_params(labelsize=8, colors="yellow")
-        if baseMode == "Temperature":
+        if ((baseMode == "Temperature") & (sliceActive is False)) | ((humidity is False) & (sliceActive is True)):
             graphTemp.fill_between(x=frameCurrent["Time"], y1=frameCurrent["TemperatureCurrent"],
                                    y2=frameCurrent["TemperatureSet"], alpha=0.2)
-        if baseMode == "Humidity":
+        if ((baseMode == "Humidity") & (sliceActive is False)) | ((humidity is True) & (sliceActive is True)):
             graphHum = graphTemp.twinx()
             graphHum.set_ylabel("Влажность, %", color="red")
             graphHum.plot(frameCurrent["Time"], frameCurrent["HumidityCurrent"], "-r",
@@ -833,6 +830,7 @@ def Plot():
     if online is False:
         return
     if sliceActive:
+        humidity = False
         return
 
     root.after(5000, Plot)

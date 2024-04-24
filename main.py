@@ -30,6 +30,7 @@ statusIndex, modeIndex = 0, 0
 listIP = {}
 temperatureCurrent, temperatureSet = -1.1, -1.1
 humidityCurrent, humiditySet = 1.1, 1.1
+version, tmin, tmax = 0, 0, 0
 rootFolder = f"C:\\Cont\\"
 picFolder = f"{rootFolder}Graph\\"
 converter = f"{rootFolder}Converter\\easyсonverter.exe"
@@ -345,7 +346,7 @@ def OpenConnection():
     global machineIP, master, ftp, fileList, csvFolder, xlsFolder
 
     try:
-        master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=5)
+        master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
         master.set_timeout(8.0)
     except TimeoutError:
         print("4")
@@ -468,7 +469,7 @@ def DeviceErrorWindow():
 
 def ReadModbusTCP():
     global panelIP, panelDate, panelTime, currentTime, filename, picname, \
-        temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, modeIndex, statusIndex
+        temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, modeIndex, statusIndex, version, tmin, tmax
     while True:
         try:
             getSys = master.execute(1, communicate.READ_INPUT_REGISTERS, 10099, 10)
@@ -478,6 +479,10 @@ def ReadModbusTCP():
             getHumSet = master.execute(1, communicate.READ_INPUT_REGISTERS, 10112, 1)
             getStatus = master.execute(1, communicate.READ_INPUT_REGISTERS, 10115, 1)
             getMode = master.execute(1, communicate.READ_INPUT_REGISTERS, 10114, 1)
+            getVersion = master.execute(1, communicate.READ_INPUT_REGISTERS, 10116, 1)
+            getTmin = master.execute(1, communicate.READ_INPUT_REGISTERS, 10117, 1)
+            getTmax = master.execute(1, communicate.READ_INPUT_REGISTERS, 10118, 1)
+
             panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
             panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
             panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
@@ -490,6 +495,10 @@ def ReadModbusTCP():
             humiditySet = getHumSet[0]
             statusIndex = int(getStatus[0])
             modeIndex = int(getMode[0])
+            version = int(getVersion[0])
+            tmin = int(getTmin[0])
+            tmax = int(getTmax[0])
+            print(version, tmin, tmax)
         except UnboundLocalError:
             print("Modbus format error")
         except TimeoutError:

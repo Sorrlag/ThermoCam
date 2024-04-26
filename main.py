@@ -11,6 +11,8 @@ import tkinter.messagebox
 from tkinter import *
 from tkinter import ttk
 import re
+from collections import deque as last
+from functools import reduce
 from datetime import datetime, timedelta
 import modbus_tk.defines as communicate
 import modbus_tk.modbus_tcp as modbus_tcp
@@ -278,8 +280,26 @@ def UpdateGif(ani, index=0):
 
 
 def ChangeName():
-    # buttonName.destroy()
-    raise Exception("Abort")
+
+    def Accept():
+        global machineName, listIP, frameIP
+        machineName = newName.get()
+        listIP[machineIP] = machineName
+        frameIP = pandas.DataFrame(list(listIP.items()), columns=["ip", "name"])
+        frameIP.to_csv(f"{rootFolder}config.ini", index=False)
+        frameName.destroy()
+
+    def Decline():
+        frameName.destroy()
+
+    frameName = tkinter.Frame(master=root, borderwidth=1, width=240, height=25, bg=bgLoc)
+    frameName.place(x=360, y=120)
+    newName = tkinter.Entry(master=frameName, justify="center")
+    newName.place(x=30, y=1, width=180, height=22)
+    ttk.Button(master=frameName, style="TButton", image=acceptImage, compound=TOP, command=Accept)\
+        .place(x=0, y=0, width=24, height=24)
+    ttk.Button(master=frameName, style="TButton", image=declineImage, command=Decline)\
+        .place(x=216, y=0, width=24, height=24)
 
 
 def GetLocalIP():
@@ -292,11 +312,6 @@ def InputIP():
     def GetIP():
         global machineIP
         machineIP = entryIP.get()
-        # record = [machineIP, "Климатическая установка"]
-        # configPath = f"{rootFolder}config.ini"
-        # with open(configPath, mode="a", newline="") as configFile:
-        #     writeIP = csv.writer(configFile)
-        #     writeIP.writerow(record)
         screenIP.grab_release()
         screenIP.destroy()
         CheckIP()
@@ -332,19 +347,28 @@ def InputIP():
 def CheckIP():
     global machineIP, machineName, frameIP
     configPath = f"{rootFolder}config.ini"
-    frameIP = pandas.read_csv(configPath, sep=",", encoding="cp1251")
+    frameIP = pandas.read_csv(configPath, sep=",")
+    InputIP() if frameIP.empty & (machineIP == "") else UpdateList()
+
+
+def UpdateList():
+    global machineIP, machineName, frameIP, listIP
     if frameIP.empty:
-        if machineIP == "":
-            InputIP()
-        else:
-            OpenConnection()
+        machineName = "Климатическая установка"
+        record = [machineIP, machineName]
+        configPath = f"{rootFolder}config.ini"
+        with open(configPath, mode="a", newline="") as configFile:
+            writeIP = csv.writer(configFile)
+            writeIP.writerow(record)
     else:
-        OpenConnection()
+        listIP = dict(zip(frameIP["ip"], frameIP["name"]))
+        [machineIP] = last(listIP, maxlen=1)
+        machineName = listIP[machineIP]
+    OpenConnection()
 
 
 def OpenConnection():
     global machineIP, master, ftp, fileList, csvFolder, xlsFolder
-
     try:
         master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
         master.set_timeout(8.0)
@@ -353,7 +377,6 @@ def OpenConnection():
         ConnectionErrorWindow()
         return
     try:
-        print(machineIP)
         ftp = ftplib.FTP(host=machineIP, timeout=8)
         ftp.login(user="uploadhis", passwd="111111")
         ftp.cwd("datalog/data")
@@ -371,7 +394,6 @@ def OpenConnection():
     except ftplib.error_perm:
         DeviceErrorWindow()
         return
-    UpdateList()
     threadModbus.start() if not threadModbus.is_alive() else None
     LabelsShow()
     UserControl()
@@ -380,24 +402,8 @@ def OpenConnection():
     threadFTP.start() if not threadFTP.is_alive() else None
     GetPeriod()
     GlobalStatus()
+    time.sleep(3)
     Plot()
-
-
-def UpdateList():
-    global machineIP, machineName, frameIP
-    if frameIP.empty:
-        record = [machineIP, "Климатическая установка"]
-        configPath = f"{rootFolder}config.ini"
-        with open(configPath, mode="a", newline="") as configFile:
-            writeIP = csv.writer(configFile)
-            writeIP.writerow(record)
-    else:
-        for ip in frameIP.index:
-            listIP[frameIP.loc[ip, "ip"]] = frameIP.loc[ip, "name"]
-            listIP[machineIP] = "Климатическая установка"
-    print(listIP)
-    machineIP = frameIP.iloc[-1]["ip"]
-    machineName = frameIP.iloc[-1]["name"]
 
 
 def ConnectionErrorWindow():
@@ -489,24 +495,27 @@ def ReadModbusTCP():
             currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
             filename = f"{getSys[6]:04}{getSys[5]:02}{getSys[4]:02}"
             picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
-            temperatureCurrent = (getTempCur[0] - 2 ** 16) / 10 if getTempCur[0] > 2 ** 15 else getTempCur[0] / 10
-            temperatureSet = (getTempSet[0] - 2 ** 16) / 10 if getTempSet[0] > 2 ** 15 else getTempSet[0] / 10
+            temperatureCurrent = (getTempCur[0] - 2**16) / 10 if getTempCur[0] > 2**15 else getTempCur[0] / 10
+            temperatureSet = (getTempSet[0] - 2**16) / 10 if getTempSet[0] > 2**15 else getTempSet[0] / 10
             humidityCurrent = getHumCur[0] / 10
             humiditySet = getHumSet[0]
             statusIndex = int(getStatus[0])
             modeIndex = int(getMode[0])
             version = int(getVersion[0])
-            tmin = int(getTmin[0])
-            tmax = int(getTmax[0])
-            print(version, tmin, tmax)
+            tmin = int(getTmin[0]) - 2**16 if getTmin[0] > 2**15 else int(getTmin[0])
+            tmax = int(getTmax[0]) - 2**16 if getTmax[0] > 2**15 else int(getTmax[0])
         except UnboundLocalError:
             print("Modbus format error")
+            DeviceErrorWindow()
+            return
         except TimeoutError:
             print("1")
             ConnectionErrorWindow()
             return
         except ConnectionRefusedError:
             print("Modbus read error")
+            DeviceErrorWindow()
+            return
         time.sleep(1)
 
 
@@ -551,7 +560,7 @@ def CurrentUpdate():
             DeviceErrorWindow()
             return
         except FileNotFoundError:
-            print("File not found. Need to print error on plot")
+            print("Current day file not found")
         dtlList = os.listdir(dtlFolder)
         dtlFile = ''.join(dtlList[-1:])
         csvFile = f"{dtlFile[:8]}.csv"
@@ -574,7 +583,7 @@ def WriteFile():
 
 
 def UserControl():
-    global graphLabels, graphPeriods, graphDefault
+    global graphLabels, graphPeriods, graphDefault, machineDefault, listIP
     graphLabels = ["5 минут", "15 минут", "30 минут", "1 час", "2 часа", "4 часа", "<Настроить>"]
     graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:01:00"]
     graphDefault = StringVar(value=graphLabels[0])
@@ -582,11 +591,15 @@ def UserControl():
                                background=bgLoc, foreground=bgLoc)
     graphPeriod.place(x=820, y=90)
     buttonSave.place(x=830, y=225, width=140, height=30)
-    buttonName.place(x=360, y=90, width=240)
-    buttonStatus.place(x=360, y=140, width=240)
-    buttonSpeed.place(x=360, y=170, width=240)
-    buttonSetTemp.place(x=360, y=200, width=240)
+    buttonName.place(x=360, y=120, width=240)
+    buttonStatus.place(x=360, y=155, width=240)
+    buttonSpeed.place(x=360, y=180, width=240)
+    buttonSetTemp.place(x=360, y=205, width=240)
     buttonSetHum.place(x=360, y=230, width=240)
+    machineDefault = StringVar(value=f"{machineIP} :: {machineName}")
+    machinesList = ttk.Combobox(values=[f"{k} :: {v}" for k, v in listIP.items()], textvariable=machineDefault,
+                                state="readonly", background=bgLoc, foreground=bgLoc)
+    machinesList.place(x=360, y=90, width=240)
     navi = NavigationToolbar2Tk(canvasGraph)
     navi.configure(background=bgLoc)
     navi.place(x=670, y=220, width=155, height=40)
@@ -773,7 +786,24 @@ def HideSlice():
 
 
 def Plot():
-    global canvasError, showError, sliceActive, baseMode, online, humidity
+
+    def PlotError(activate):
+        global canvasError, labelError, showError
+        if showError is False:
+            if activate is True:
+                canvasError = tkinter.Canvas(master=root, bg="yellow", width=100, height=100)
+                labelError = tkinter.Label(master=canvasError, bg="yellow", fg="red", text="Ошибка чтения данных...")
+                labelError.pack(fill=BOTH, expand=True)
+                canvasError.place(x=430, y=500)
+                showError = True
+        else:
+            if activate is False:
+                canvasError.destroy()
+                showError = False
+
+    global sliceActive, baseMode, online, humidity
+    if online is False:
+        return
     chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
     try:
         if not sliceActive:
@@ -810,11 +840,13 @@ def Plot():
                 print("Normal reading 2-days slice data")
     except ValueError:
         print("Time read error")
+        PlotError(True)
     except FileNotFoundError:
-        print("File not found. Need to print error on plot")
-        return
+        print("File not found")
+        PlotError(True)
     except UnboundLocalError:
-        print("Time format error. Need to print error on plot")
+        print("Time format error")
+        PlotError(True)
     except IndexError:
         DeviceErrorWindow()
         return
@@ -843,24 +875,16 @@ def Plot():
             graphHum.grid(alpha=0.6, linestyle=":", color="red")
             graphHum.tick_params(labelsize=8, colors="yellow")
     except UnboundLocalError:
-        print("Plot error. Need to print error on plot")
+        print("Plot error")
+        PlotError(True)
     except TypeError:
-        print("Error read data. Need to print error on plot")
-        if showError is False:
-            canvasError = tkinter.Canvas(master=root, bg="yellow", width=100, height=100)
-            labelError = tkinter.Label(master=canvasError, bg="yellow", fg="red", text="Ошибка чтения данных...")
-            labelError.pack(fill=BOTH, expand=True)
-            canvasError.place(x=430, y=500)
-            showError = True
+        print("Error read data")
+        PlotError(True)
     else:
-        if showError is True:
-            canvasError.destroy()
-            showError = False
+        PlotError(False)
     figure.autofmt_xdate()
     canvasGraph.draw()
     canvasGraph.get_tk_widget().place(x=20, y=290)
-    if online is False:
-        return
     if sliceActive:
         humidity = False
         return
@@ -874,7 +898,7 @@ def SaveFigure():
 
 
 root = Tk()
-root.title("Модуль удалённого контроля климатической камеры")
+root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.0a")
 root.geometry("1000x800")
 root.wm_geometry("+%d+%d" % (100, 100))
 root["bg"] = bgGlob
@@ -899,6 +923,9 @@ framesIdleT = [PhotoImage(file="icons\\idleT.gif", format="gif -index %i" %(i)) 
 framesWet = [PhotoImage(file="icons\\wet.gif", format="gif -index %i" %(i)) for i in range(12)]
 framesDry = [PhotoImage(file="icons\\dry.gif", format="gif -index %i" %(i)) for i in range(10)]
 framesIdleH = [PhotoImage(file="icons\\idleH.gif", format="gif -index %i" %(i)) for i in range(11)]
+
+acceptImage = PhotoImage(file="icons\\accept.png")
+declineImage = PhotoImage(file="icons\\decline.png")
 
 threadModbus = threading.Thread(target=ReadModbusTCP, daemon=True, name="modbus")
 threadFTP = threading.Thread(target=CurrentUpdate, daemon=True, name='ftp')
@@ -927,7 +954,7 @@ canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
 
 canvasError = tkinter.Canvas(master=root, bg="red", width=100, height=100)
 
-ttk.Style().configure("TButton", font="helvetica 8", background=bgGlob, relief="sunken")
+ttk.Style().configure("TButton", font="helvetica 8", background=bgGlob, relief="sunken", border=0)
 buttonSave = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
 buttonName = ttk.Button(command=ChangeName, style="TButton", text="Задать наименование установки")
 buttonStatus = ttk.Button(style="TButton", text="ПУСК / СТОП", state="disabled")

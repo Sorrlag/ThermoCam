@@ -10,6 +10,7 @@ import tkinter
 import tkinter.messagebox
 from tkinter import *
 from tkinter import ttk
+from tkinter_input_box.input_box import InputBox
 import re
 from collections import deque as last
 from functools import reduce
@@ -44,8 +45,9 @@ sliceActive = sliceChange = showSlice = showError = showButton = False
 sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo = "", "", "", ""
 baseMode, baseStatus = "Temperature", "Stop"
 heat = cold = idleT = wet = dry = idleH = False
-online = True
+onlinePlot = True
 humidity = False
+connect = False
 
 
 def ObjectsPlace():
@@ -282,9 +284,11 @@ def UpdateGif(ani, index=0):
 def ChangeName():
 
     def Accept():
-        global machineName, listIP, frameIP
+        global machineName, listIP, frameIP, machinesList, machineDefault
         machineName = newName.get()
         listIP[machineIP] = machineName
+        machinesList["values"] = [f"{k} :: {v}" for k, v in listIP.items()]
+        machineDefault.set(value=f"{machineIP} :: {machineName}")
         frameIP = pandas.DataFrame(list(listIP.items()), columns=["ip", "name"])
         frameIP.to_csv(f"{rootFolder}config.ini", index=False)
         frameName.destroy()
@@ -293,8 +297,9 @@ def ChangeName():
         frameName.destroy()
 
     frameName = tkinter.Frame(master=root, borderwidth=1, width=240, height=25, bg=bgLoc)
-    frameName.place(x=360, y=120)
-    newName = tkinter.Entry(master=frameName, justify="center")
+    frameName.place(x=360, y=114)
+    newName = InputBox(container=frameName, placeholder="Введите наименование", placeholder_color="dim gray",
+                       input_type="text", justify="center")
     newName.place(x=30, y=1, width=180, height=22)
     ttk.Button(master=frameName, style="TButton", image=acceptImage, compound=TOP, command=Accept)\
         .place(x=0, y=0, width=24, height=24)
@@ -302,10 +307,53 @@ def ChangeName():
         .place(x=216, y=0, width=24, height=24)
 
 
+def AddMachine():
+
+    def Accept():
+        newlist = listIP
+        print(newlist)
+        newIP = newAddress.get()
+        newlist[newIP] = "new machine"
+        print(newlist)
+        frameAdd.destroy()
+
+    def Decline():
+        frameAdd.destroy()
+
+    frameAdd = tkinter.Frame(master=root, borderwidth=1, width=240, height=25, bg=bgLoc)
+    frameAdd.place(x=360, y=114)
+    newAddress = InputBox(container=frameAdd, placeholder="Введите IP адрес", placeholder_color="dim gray",
+                          input_type="text", justify="center")
+    newAddress.place(x=30, y=1, width=180, height=22)
+    ttk.Button(master=frameAdd, style="TButton", image=acceptImage, compound=TOP, command=Accept)\
+        .place(x=0, y=0, width=24, height=24)
+    ttk.Button(master=frameAdd, style="TButton", image=declineImage, compound=TOP, command=Decline)\
+        .place(x=216, y=0, width=24, height=24)
+
+
 def GetLocalIP():
     global localIP
     hostname = socket.gethostname()
     localIP = socket.gethostbyname(hostname)
+
+
+def CheckIP():
+    global machineIP, machineName, frameIP, listIP
+    configPath = f"{rootFolder}config.ini"
+    frameIP = pandas.read_csv(configPath, sep=",")
+    if frameIP.empty:
+        if machineIP == "":
+            InputIP()
+        else:
+            machineName = "Климатическая установка"
+            listIP = {machineIP: machineName}
+            frameIP = pandas.DataFrame(list(listIP.items()), columns=["ip", "name"])
+            OpenConnection()
+    else:
+        listIP = dict(zip(frameIP["ip"], frameIP["name"]))
+        [machineIP] = last(listIP, maxlen=1)
+        machineName = listIP[machineIP]
+        OpenConnection()
 
 
 def InputIP():
@@ -344,31 +392,13 @@ def InputIP():
     buttonClose.place(x=10, y=110, width=280)
 
 
-def CheckIP():
-    global machineIP, machineName, frameIP
-    configPath = f"{rootFolder}config.ini"
-    frameIP = pandas.read_csv(configPath, sep=",")
-    InputIP() if frameIP.empty & (machineIP == "") else UpdateList()
-
-
 def UpdateList():
-    global machineIP, machineName, frameIP, listIP
-    if frameIP.empty:
-        machineName = "Климатическая установка"
-        record = [machineIP, machineName]
-        configPath = f"{rootFolder}config.ini"
-        with open(configPath, mode="a", newline="") as configFile:
-            writeIP = csv.writer(configFile)
-            writeIP.writerow(record)
-    else:
-        listIP = dict(zip(frameIP["ip"], frameIP["name"]))
-        [machineIP] = last(listIP, maxlen=1)
-        machineName = listIP[machineIP]
-    OpenConnection()
+    global frameIP
+    frameIP.to_csv(f"{rootFolder}config.ini", index=False)
 
 
 def OpenConnection():
-    global machineIP, master, ftp, fileList, csvFolder, xlsFolder
+    global machineIP, master, ftp, fileList, csvFolder, xlsFolder, connect
     try:
         master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
         master.set_timeout(8.0)
@@ -400,6 +430,7 @@ def OpenConnection():
     HistoryFTP()
     HistoryCSV()
     threadFTP.start() if not threadFTP.is_alive() else None
+    UpdateList()
     GetPeriod()
     GlobalStatus()
     time.sleep(3)
@@ -524,6 +555,7 @@ def HistoryFTP():
         for fileNum in fileList:
             remoteFile = fileNum
             localFile = f"{dtlFolder}{remoteFile}"
+            os.mkdir(dtlFolder) if not os.path.exists(dtlFolder) else None
             with open(localFile, "wb") as file:
                 ftp.retrbinary("RETR %s" % remoteFile, file.write)
     except NameError:
@@ -532,6 +564,9 @@ def HistoryFTP():
     except TimeoutError:
         print("2")
         ConnectionErrorWindow()
+        return
+    except FileNotFoundError:
+        DeviceErrorWindow()
         return
 
 
@@ -583,7 +618,7 @@ def WriteFile():
 
 
 def UserControl():
-    global graphLabels, graphPeriods, graphDefault, machineDefault, listIP
+    global graphLabels, graphPeriods, graphDefault, machineDefault, listIP, machinesList
     graphLabels = ["5 минут", "15 минут", "30 минут", "1 час", "2 часа", "4 часа", "<Настроить>"]
     graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:01:00"]
     graphDefault = StringVar(value=graphLabels[0])
@@ -591,7 +626,8 @@ def UserControl():
                                background=bgLoc, foreground=bgLoc)
     graphPeriod.place(x=820, y=90)
     buttonSave.place(x=830, y=225, width=140, height=30)
-    buttonName.place(x=360, y=120, width=240)
+    buttonRename.place(x=360, y=115, width=115)
+    buttonAdd.place(x=485, y=115, width=115)
     buttonStatus.place(x=360, y=155, width=240)
     buttonSpeed.place(x=360, y=180, width=240)
     buttonSetTemp.place(x=360, y=205, width=240)
@@ -608,11 +644,11 @@ def UserControl():
 def GetPeriod():
 
     def StartStopPlot():
-        global online
-        online = not online
-        Plot() if online else None
+        global onlinePlot
+        onlinePlot = not onlinePlot
+        Plot() if onlinePlot else None
 
-    global showSlice, sliceActive, buttonEdit, buttonOnline, online, showButton
+    global showSlice, sliceActive, buttonEdit, buttonOnline, onlinePlot, showButton
     choice = graphLabels.index(graphDefault.get())
     if (choice == 6) & (showSlice is False):
         showSlice = True
@@ -631,7 +667,7 @@ def GetPeriod():
             buttonOnline = ttk.Button(root, style="TButton", command=StartStopPlot)
             buttonOnline.place(x=670, y=180, width=300)
             showButton = True
-        buttonOnline["text"] = "Остановить выборку в реальном времени" if online \
+        buttonOnline["text"] = "Остановить выборку в реальном времени" if onlinePlot \
             else "Возобновить выборку в реальном времени"
     if (choice == 6) & showButton is True:
         buttonOnline.destroy()
@@ -643,13 +679,13 @@ def GetPeriod():
 def ShowSlice():
 
     def GetSlice(climate):
-        global sliceActive, sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo, online, humidity
+        global sliceActive, sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo, onlinePlot, humidity
         sliceDateFrom = "2024"+monthFrom.get()+dayFrom.get()
         sliceTimeFrom = f"{hourFrom.get()}:{minutesFrom.get()}:00"
         sliceDateTo = "2024"+monthTo.get()+dayTo.get()
         sliceTimeTo = f"{hourTo.get()}:{minutesTo.get()}:00"
         sliceActive = True
-        online = True
+        onlinePlot = True
         humidity = climate
         print(climate)
         print("This one 2")
@@ -801,8 +837,8 @@ def Plot():
                 canvasError.destroy()
                 showError = False
 
-    global sliceActive, baseMode, online, humidity
-    if online is False:
+    global sliceActive, baseMode, onlinePlot, humidity
+    if onlinePlot is False:
         return
     chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
     try:
@@ -954,9 +990,10 @@ canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
 
 canvasError = tkinter.Canvas(master=root, bg="red", width=100, height=100)
 
-ttk.Style().configure("TButton", font="helvetica 8", background=bgGlob, relief="sunken", border=0)
+ttk.Style().configure("TButton", font="helvetica 8", background=bgGlob, relief="sunken", border=0, foreground="blue")
 buttonSave = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
-buttonName = ttk.Button(command=ChangeName, style="TButton", text="Задать наименование установки")
+buttonRename = ttk.Button(command=ChangeName, style="TButton", text="Переименовать")
+buttonAdd = ttk.Button(command=AddMachine, style="TButton", text="Добавить")
 buttonStatus = ttk.Button(style="TButton", text="ПУСК / СТОП", state="disabled")
 buttonSpeed = ttk.Button(style="TButton", text="Активировать контроль скорости", state="disabled")
 buttonSetTemp = ttk.Button(style="TButton", text="Сменить уставку по температуре", state="disabled")

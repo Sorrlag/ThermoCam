@@ -6,17 +6,16 @@ import ftplib
 import sys
 import time
 import threading
+import re
+from collections import deque as last
+from datetime import datetime, timedelta
+import modbus_tk.defines as communicate
+import modbus_tk.modbus_tcp as modbus_tcp
 import tkinter
 import tkinter.messagebox
 from tkinter import *
 from tkinter import ttk
 from tkinter_input_box.input_box import InputBox
-import re
-from collections import deque as last
-from functools import reduce
-from datetime import datetime, timedelta
-import modbus_tk.defines as communicate
-import modbus_tk.modbus_tcp as modbus_tcp
 import matplotlib.ticker
 import matplotlib.dates
 from matplotlib.figure import Figure
@@ -47,7 +46,8 @@ baseMode, baseStatus = "Temperature", "Stop"
 heat = cold = idleT = wet = dry = idleH = False
 onlinePlot = True
 humidity = False
-connect = False
+reconnect = False
+currentMachine = StringVar
 
 
 def ObjectsPlace():
@@ -284,11 +284,11 @@ def UpdateGif(ani, index=0):
 def ChangeName():
 
     def Accept():
-        global machineName, listIP, frameIP, machinesList, machineDefault
+        global machineIP, machineName, listIP, frameIP, machinesList, currentMachine
         machineName = newName.get()
         listIP[machineIP] = machineName
         machinesList["values"] = [f"{k} :: {v}" for k, v in listIP.items()]
-        machineDefault.set(value=f"{machineIP} :: {machineName}")
+        currentMachine.set(value=f"{machineIP} :: {machineName}")
         frameIP = pandas.DataFrame(list(listIP.items()), columns=["ip", "name"])
         frameIP.to_csv(f"{rootFolder}config.ini", index=False)
         frameName.destroy()
@@ -310,11 +310,9 @@ def ChangeName():
 def AddMachine():
 
     def Accept():
-        newlist = listIP
-        print(newlist)
-        newIP = newAddress.get()
-        newlist[newIP] = "new machine"
-        print(newlist)
+        global machineIP, machineName
+        machineIP = newAddress.get()
+        CheckIP()
         frameAdd.destroy()
 
     def Decline():
@@ -351,8 +349,13 @@ def CheckIP():
             OpenConnection()
     else:
         listIP = dict(zip(frameIP["ip"], frameIP["name"]))
-        [machineIP] = last(listIP, maxlen=1)
-        machineName = listIP[machineIP]
+        if machineIP == "":
+            [machineIP] = last(listIP, maxlen=1)
+            machineName = listIP[machineIP]
+        else:
+            listIP[machineIP] = "Климатическая установка" if machineIP not in listIP else None
+            machineName = listIP[machineIP]
+            frameIP = pandas.DataFrame(list(listIP.items()), columns=["ip", "name"])
         OpenConnection()
 
 
@@ -398,7 +401,7 @@ def UpdateList():
 
 
 def OpenConnection():
-    global machineIP, master, ftp, fileList, csvFolder, xlsFolder, connect
+    global machineIP, master, ftp, fileList, dtlFolder, csvFolder, xlsFolder
     try:
         master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
         master.set_timeout(8.0)
@@ -411,6 +414,7 @@ def OpenConnection():
         ftp.login(user="uploadhis", passwd="111111")
         ftp.cwd("datalog/data")
         fileList = ftp.nlst()
+        dtlFolder = f"{rootFolder}Converter\\{machineIP}\\"
         csvFolder = f"{rootFolder}{machineIP}\\CSV\\"
         xlsFolder = f"{rootFolder}{machineIP}\\XLS\\"
     except TimeoutError:
@@ -435,6 +439,7 @@ def OpenConnection():
     GlobalStatus()
     time.sleep(3)
     Plot()
+    # CurrentMachine()
 
 
 def ConnectionErrorWindow():
@@ -576,8 +581,8 @@ def HistoryCSV():
         dtlFile = fileNum
         csvFile = f"{fileNum[:8]}.csv"
         xlsFile = f"{fileNum[:8]}.xls"
-        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{csvFolder}{csvFile}"', shell=True)
-        subprocess.run(f'{converter} /b0 /t0 "{dtlFolder}{dtlFile}" "{xlsFolder}{xlsFile}"', shell=True)
+        subprocess.run(f"{converter} /b0 /t0 '{dtlFolder}{dtlFile}' '{csvFolder}{csvFile}'", shell=True)
+        subprocess.run(f"{converter} /b0 /t0 '{dtlFolder}{dtlFile}' '{xlsFolder}{xlsFile}'", shell=True)
 
 
 def CurrentUpdate():
@@ -618,7 +623,17 @@ def WriteFile():
 
 
 def UserControl():
-    global graphLabels, graphPeriods, graphDefault, machineDefault, listIP, machinesList
+
+    def CurrentMachine(event):
+        global machineIP, machineName
+        currentList = currentMachine.get().split(sep=" :: ")
+        chosenIP = currentList[0]
+        if chosenIP != machineIP:
+            machineIP = currentList[0]
+            machineName = currentList[1]
+            OpenConnection()
+
+    global graphLabels, graphPeriods, graphDefault, currentMachine, listIP, machinesList, machineIP, machineName
     graphLabels = ["5 минут", "15 минут", "30 минут", "1 час", "2 часа", "4 часа", "<Настроить>"]
     graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:01:00"]
     graphDefault = StringVar(value=graphLabels[0])
@@ -632,9 +647,10 @@ def UserControl():
     buttonSpeed.place(x=360, y=180, width=240)
     buttonSetTemp.place(x=360, y=205, width=240)
     buttonSetHum.place(x=360, y=230, width=240)
-    machineDefault = StringVar(value=f"{machineIP} :: {machineName}")
-    machinesList = ttk.Combobox(values=[f"{k} :: {v}" for k, v in listIP.items()], textvariable=machineDefault,
+    currentMachine = StringVar(value=f"{machineIP} :: {machineName}")
+    machinesList = ttk.Combobox(values=[f"{k} :: {v}" for k, v in listIP.items()], textvariable=currentMachine,
                                 state="readonly", background=bgLoc, foreground=bgLoc)
+    machinesList.bind("<<ComboboxSelected>>", CurrentMachine)
     machinesList.place(x=360, y=90, width=240)
     navi = NavigationToolbar2Tk(canvasGraph)
     navi.configure(background=bgLoc)

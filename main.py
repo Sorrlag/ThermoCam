@@ -46,7 +46,9 @@ baseMode, baseStatus = "Temperature", "Stop"
 heat = cold = idleT = wet = dry = idleH = False
 onlinePlot = True
 humidity = False
-reconnect = False
+content = False
+failConnection = failDevice = False
+dataStop = False
 currentMachine = StringVar
 
 
@@ -307,28 +309,6 @@ def ChangeName():
         .place(x=216, y=0, width=24, height=24)
 
 
-def AddMachine():
-
-    def Accept():
-        global machineIP, machineName
-        machineIP = newAddress.get()
-        CheckIP()
-        frameAdd.destroy()
-
-    def Decline():
-        frameAdd.destroy()
-
-    frameAdd = tkinter.Frame(master=root, borderwidth=1, width=240, height=25, bg=bgLoc)
-    frameAdd.place(x=360, y=114)
-    newAddress = InputBox(container=frameAdd, placeholder="Введите IP адрес", placeholder_color="dim gray",
-                          input_type="text", justify="center")
-    newAddress.place(x=30, y=1, width=180, height=22)
-    ttk.Button(master=frameAdd, style="TButton", image=acceptImage, compound=TOP, command=Accept)\
-        .place(x=0, y=0, width=24, height=24)
-    ttk.Button(master=frameAdd, style="TButton", image=declineImage, compound=TOP, command=Decline)\
-        .place(x=216, y=0, width=24, height=24)
-
-
 def GetLocalIP():
     global localIP
     hostname = socket.gethostname()
@@ -341,7 +321,7 @@ def CheckIP():
     frameIP = pandas.read_csv(configPath, sep=",")
     if frameIP.empty:
         if machineIP == "":
-            InputIP()
+            InputIP(empty=True)
         else:
             machineName = "Климатическая установка"
             listIP = {machineIP: machineName}
@@ -353,19 +333,24 @@ def CheckIP():
             [machineIP] = last(listIP, maxlen=1)
             machineName = listIP[machineIP]
         else:
-            listIP[machineIP] = "Климатическая установка" if machineIP not in listIP else None
+            listIP[machineIP] = "Климатическая установка" if machineIP not in listIP else machineName
             machineName = listIP[machineIP]
             frameIP = pandas.DataFrame(list(listIP.items()), columns=["ip", "name"])
         OpenConnection()
 
 
-def InputIP():
+def InputIP(empty):
+
     def GetIP():
         global machineIP
         machineIP = entryIP.get()
         screenIP.grab_release()
         screenIP.destroy()
         CheckIP()
+
+    def Close():
+        screenIP.grab_release()
+        screenIP.destroy()
 
     def Mask(ip):
         validIP = re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ip)
@@ -384,15 +369,19 @@ def InputIP():
     iconIP = PhotoImage(file="icons\\icon.png")
     screenIP.iconphoto(False, iconIP)
     labelIP = tkinter.Label(master=screenIP, text="Введите IP адрес климатической установки:")
-    labelIP.place(x=10, y=30, width=280)
+    labelIP.place(x=10, y=5, width=280)
     isvalid = (screenIP.register(Mask), "%P")
     entryIP = tkinter.Entry(master=screenIP, relief="solid", justify="center",
                             validate="key", validatecommand=isvalid)
-    entryIP.place(x=10, y=50, width=280)
+    entryIP.place(x=10, y=25, width=280)
     buttonStart = tkinter.Button(master=screenIP, text="Начать опрос", command=GetIP, state="disabled")
-    buttonStart.place(x=10, y=80, width=280)
-    buttonClose = tkinter.Button(master=screenIP, text="Закрыть программу", command=sys.exit)
-    buttonClose.place(x=10, y=110, width=280)
+    buttonStart.place(x=10, y=50, width=280)
+    tkinter.Button(master=screenIP, text="Закрыть программу", command=sys.exit).place(x=10, y=110, width=280)
+    if empty is False:
+        tkinter.Button(master=screenIP, text="Закрыть окно", command=Close).place(x=10, y=80, width=280)
+        screenIP.protocol("WM_DELETE_WINDOW", Close)
+    else:
+        screenIP.protocol("WM_DELETE_WINDOW", sys.exit)
 
 
 def UpdateList():
@@ -401,13 +390,13 @@ def UpdateList():
 
 
 def OpenConnection():
-    global machineIP, master, ftp, fileList, dtlFolder, csvFolder, xlsFolder
+    global machineIP, panelIP, master, ftp, fileList, dtlFolder, csvFolder, xlsFolder, failConnection
     try:
         master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
         master.set_timeout(8.0)
     except TimeoutError:
-        print("4")
-        ConnectionErrorWindow()
+        print("Error 1 open connection")
+        ConnectionErrorWindow() if failConnection is False else None
         return
     try:
         ftp = ftplib.FTP(host=machineIP, timeout=8)
@@ -418,28 +407,34 @@ def OpenConnection():
         csvFolder = f"{rootFolder}{machineIP}\\CSV\\"
         xlsFolder = f"{rootFolder}{machineIP}\\XLS\\"
     except TimeoutError:
-        print("5")
-        ConnectionErrorWindow()
+        print("Error 2 open connection")
+        ConnectionErrorWindow() if failConnection is False else None
         return
     except AttributeError:
-        print("6")
-        ConnectionErrorWindow()
+        print("Error 3 open connection")
+        ConnectionErrorWindow() if failConnection is False else None
         return
     except ftplib.error_perm:
         DeviceErrorWindow()
         return
-    threadModbus.start() if not threadModbus.is_alive() else None
+    try:
+        threadModbus.start() if threadModbus.is_alive() is False else None
+    except RuntimeError:
+        pass
     LabelsShow()
     UserControl()
     HistoryFTP()
     HistoryCSV()
-    threadFTP.start() if not threadFTP.is_alive() else None
-    UpdateList()
+    try:
+        threadFTP.start() if threadFTP.is_alive() is False else None
+    except RuntimeError:
+        pass
+    UpdateList() if machineIP == panelIP else None
     GetPeriod()
     GlobalStatus()
     time.sleep(3)
+    print("Open connection")
     Plot()
-    # CurrentMachine()
 
 
 def ConnectionErrorWindow():
@@ -454,16 +449,21 @@ def ConnectionErrorWindow():
             RetryConnection()
 
     def RetryConnection():
+        global failConnection
         screenError.grab_release()
         screenError.destroy()
+        failConnection = False
         OpenConnection()
 
     def ResetIP():
+        global failConnection
         screenError.grab_release()
         screenError.destroy()
-        InputIP()
+        failConnection = False
+        InputIP(False)
 
-    global wait
+    global wait, failConnection
+    failConnection = True
     wait = 10
     screenError = Toplevel(root)
     screenError.title("ВНИМАНИЕ")
@@ -510,7 +510,7 @@ def DeviceErrorWindow():
 
 
 def ReadModbusTCP():
-    global panelIP, panelDate, panelTime, currentTime, filename, picname, \
+    global panelIP, panelDate, panelTime, currentTime, filename, picname, failConnection, \
         temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, modeIndex, statusIndex, version, tmin, tmax
     while True:
         try:
@@ -526,6 +526,7 @@ def ReadModbusTCP():
             getTmax = master.execute(1, communicate.READ_INPUT_REGISTERS, 10118, 1)
 
             panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
+            print(machineIP, ">>>", panelIP)
             panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
             panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
             currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
@@ -543,19 +544,20 @@ def ReadModbusTCP():
         except UnboundLocalError:
             print("Modbus format error")
             DeviceErrorWindow()
-            return
+            # return
         except TimeoutError:
-            print("1")
-            ConnectionErrorWindow()
-            return
+            print("Modbus timeout error")
+            ConnectionErrorWindow() if failConnection is False else None
+            # return
         except ConnectionRefusedError:
             print("Modbus read error")
             DeviceErrorWindow()
-            return
+            # return
         time.sleep(1)
 
 
 def HistoryFTP():
+    global failConnection
     try:
         for fileNum in fileList:
             remoteFile = fileNum
@@ -567,8 +569,8 @@ def HistoryFTP():
         DeviceErrorWindow()
         return
     except TimeoutError:
-        print("2")
-        ConnectionErrorWindow()
+        print("FTP timeout error")
+        ConnectionErrorWindow() if failConnection is False else None
         return
     except FileNotFoundError:
         DeviceErrorWindow()
@@ -586,6 +588,7 @@ def HistoryCSV():
 
 
 def CurrentUpdate():
+    global failConnection
     while True:
         try:
             remoteFile = ''.join(fileList[-1:])
@@ -593,8 +596,8 @@ def CurrentUpdate():
             with open(localFile, "wb") as file:
                 ftp.retrbinary("RETR %s" % remoteFile, file.write)
         except TimeoutError:
-            print("3")
-            ConnectionErrorWindow()
+            print("CSV timeout error")
+            ConnectionErrorWindow() if failConnection is False else None
             return
         except NameError:
             DeviceErrorWindow()
@@ -1009,7 +1012,7 @@ canvasError = tkinter.Canvas(master=root, bg="red", width=100, height=100)
 ttk.Style().configure("TButton", font="helvetica 8", background=bgGlob, relief="sunken", border=0, foreground="blue")
 buttonSave = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
 buttonRename = ttk.Button(command=ChangeName, style="TButton", text="Переименовать")
-buttonAdd = ttk.Button(command=AddMachine, style="TButton", text="Добавить")
+buttonAdd = ttk.Button(command=lambda: InputIP(empty=False), style="TButton", text="Добавить")
 buttonStatus = ttk.Button(style="TButton", text="ПУСК / СТОП", state="disabled")
 buttonSpeed = ttk.Button(style="TButton", text="Активировать контроль скорости", state="disabled")
 buttonSetTemp = ttk.Button(style="TButton", text="Сменить уставку по температуре", state="disabled")

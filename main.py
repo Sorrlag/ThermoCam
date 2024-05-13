@@ -1,4 +1,3 @@
-import csv
 import subprocess
 import socket
 import os
@@ -33,10 +32,11 @@ listIP = {}
 temperatureCurrent, temperatureSet = -1.1, -1.1
 humidityCurrent, humiditySet = 1.1, 1.1
 version, tmin, tmax = 0, 0, 0
-rootFolder = f"C:\\Cont\\"
+rootFolder = os.path.abspath(os.curdir) + "\\"
+iconsFolder = getattr(sys, "_MEIPASS", os.getcwd()) + "\\icons\\"
 picFolder = f"{rootFolder}Graph\\"
-converter = f"{rootFolder}Converter\\easyсonverter.exe"
-sourceFolder = f"{rootFolder}Converter\\data\\"
+converter = f"{rootFolder}support\\easyсonverter.exe"
+sourceFolder = f"{rootFolder}support\\data\\"
 csvFolder = f"{rootFolder}\\CSV\\"
 xlsFolder = f"{rootFolder}\\XLS\\"
 machineIP, machineName = "", ""
@@ -378,7 +378,7 @@ def InputIP(empty):
     screenIP.resizable(False, False)
     screenIP.grab_set()
     screenIP.protocol("WM_DELETE_WINDOW", Close)
-    iconIP = PhotoImage(file="icons\\icon.png")
+    iconIP = PhotoImage(file=f"{iconsFolder}icon.png")
     screenIP.iconphoto(False, iconIP)
     labelIP = tkinter.Label(master=screenIP, text="Введите IP адрес климатической камеры:")
     labelIP.place(x=10, y=20, width=280)
@@ -410,7 +410,7 @@ def OpenConnection():
         ftp.login(user="uploadhis", passwd="111111")
         ftp.cwd("datalog/data")
         files = ftp.nlst()
-        sourceFolder = f"{rootFolder}Converter\\{machineIP}\\"
+        sourceFolder = f"{rootFolder}support\\{machineIP}\\"
         csvFolder = f"{rootFolder}{machineIP}\\CSV\\"
         xlsFolder = f"{rootFolder}{machineIP}\\XLS\\"
 
@@ -912,7 +912,7 @@ def ConnectionErrorWindow():
     screenError.grab_set()
     screenError["bg"] = "yellow"
     screenError.protocol("WM_DELETE_WINDOW", sys.exit)
-    screenIcon = PhotoImage(file="icons\\icon.png")
+    screenIcon = PhotoImage(file=f"{iconsFolder}icon.png")
     screenError.iconphoto(False, screenIcon)
 
     info = tkinter.Label(master=screenError, bg="yellow")
@@ -937,7 +937,7 @@ def DeviceErrorWindow():
     screenError.grab_set()
     screenError["bg"] = "yellow"
     screenError.protocol("WM_DELETE_WINDOW", sys.exit)
-    screenIcon = PhotoImage(file="icons\\icon.png")
+    screenIcon = PhotoImage(file=f"{iconsFolder}icon.png")
     screenError.iconphoto(False, screenIcon)
 
     info = tkinter.Label(master=screenError, bg="yellow", text="Невозможно установить связь!")
@@ -952,7 +952,7 @@ root.geometry("1000x800")
 root.wm_geometry("+%d+%d" % (100, 100))
 root["bg"] = bgGlob
 root.resizable(False, False)
-icon = PhotoImage(file="icons\\icon.png")
+icon = PhotoImage(file=f"{iconsFolder}icon.png")
 root.iconphoto(False, icon)
 
 canvas = Canvas(width=998, height=698, bg=bgGlob, highlightthickness=1, highlightbackground=bgGlob)
@@ -966,15 +966,15 @@ canvas.create_rectangle(660, 0, 980, 180, fill="#510D70", outline="#510D70")
 canvas.create_rectangle(18, 208, 988, 698, fill="#352642", outline="#241C2B")
 canvas.create_rectangle(10, 200, 980, 690, fill="#510D70", outline="#510D70")
 
-framesHeat = [PhotoImage(file="icons\\heat.gif", format="gif -index %i" %(i)) for i in range(15)]
-framesCold = [PhotoImage(file="icons\\cold.gif", format="gif -index %i" %(i)) for i in range(10)]
-framesIdleT = [PhotoImage(file="icons\\idleT.gif", format="gif -index %i" %(i)) for i in range(11)]
-framesWet = [PhotoImage(file="icons\\wet.gif", format="gif -index %i" %(i)) for i in range(12)]
-framesDry = [PhotoImage(file="icons\\dry.gif", format="gif -index %i" %(i)) for i in range(10)]
-framesIdleH = [PhotoImage(file="icons\\idleH.gif", format="gif -index %i" %(i)) for i in range(11)]
+framesHeat = [PhotoImage(file=f"{iconsFolder}heat.gif", format="gif -index %i" %(i)) for i in range(15)]
+framesCold = [PhotoImage(file=f"{iconsFolder}cold.gif", format="gif -index %i" %(i)) for i in range(10)]
+framesIdleT = [PhotoImage(file=f"{iconsFolder}idleT.gif", format="gif -index %i" %(i)) for i in range(11)]
+framesWet = [PhotoImage(file=f"{iconsFolder}wet.gif", format="gif -index %i" %(i)) for i in range(12)]
+framesDry = [PhotoImage(file=f"{iconsFolder}dry.gif", format="gif -index %i" %(i)) for i in range(10)]
+framesIdleH = [PhotoImage(file=f"{iconsFolder}idleH.gif", format="gif -index %i" %(i)) for i in range(11)]
 
-acceptImage = PhotoImage(file="icons\\accept.png")
-declineImage = PhotoImage(file="icons\\decline.png")
+acceptImage = PhotoImage(file=f"{iconsFolder}accept.png")
+declineImage = PhotoImage(file=f"{iconsFolder}decline.png")
 
 threadModbus = threading.Thread(target=ReadModbusTCP, daemon=True, name="modbus")
 threadFTP = threading.Thread(target=DataUpdate, daemon=True, name='ftp')

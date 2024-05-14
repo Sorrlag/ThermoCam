@@ -20,6 +20,7 @@ import matplotlib.dates
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas
+import logging
 
 
 xLabelPos, xValuePos, yPos = 20, 190, 100
@@ -32,9 +33,10 @@ listIP = {}
 temperatureCurrent, temperatureSet = -1.1, -1.1
 humidityCurrent, humiditySet = 1.1, 1.1
 version, tmin, tmax = 0, 0, 0
-rootFolder = os.path.abspath(os.curdir) + "\\"
+runFolder = os.path.abspath(os.curdir)
+rootFolder = runFolder if len(runFolder) < 4 else runFolder + "\\"
 iconsFolder = getattr(sys, "_MEIPASS", os.getcwd()) + "\\icons\\"
-picFolder = f"{rootFolder}Graph\\"
+picFolder = f"{rootFolder}graph\\"
 converter = f"{rootFolder}support\\easyсonverter.exe"
 sourceFolder = f"{rootFolder}support\\data\\"
 csvFolder = f"{rootFolder}\\CSV\\"
@@ -52,6 +54,8 @@ currentMachine = StringVar
 run = False
 connection = exchange = False
 files = []
+logging.basicConfig(filename=f"{rootFolder}sys.log", level=logging.INFO)
+logging.info(f"New session run from {rootFolder}")
 
 
 def ObjectsPlace():
@@ -94,6 +98,7 @@ def LabelsShow():
     humSetLabel["text"] = f"Уставка по влажности:"
     humSetValue["text"] = f"{humiditySet} °C"
     labelPeriods["text"] = "Диапазон отображения:"
+
     root.after(1000, LabelsShow)
 
 
@@ -390,7 +395,7 @@ def InputIP(empty):
     buttonStart.place(x=10, y=110, width=280)
     if empty is False:
         saved = ttk.Combobox(master=screenIP, values=[f"{k} :: {v}" for k, v in listIP.items()],
-                                    state="readonly", background=bgLoc, foreground=bgLoc)
+                             state="readonly", background=bgLoc, foreground=bgLoc)
         saved.bind("<<ComboboxSelected>>", Shift)
         saved.place(x=10, y=80, width=280)
 
@@ -401,7 +406,8 @@ def UpdateList():
 
 
 def OpenConnection():
-    global machineIP, panelIP, master, ftp, files, sourceFolder, csvFolder, xlsFolder, failConnection, run, exchange
+    global machineIP, panelIP, master, ftp, files, sourceFolder, csvFolder, xlsFolder, \
+        failConnection, failDevice, run, exchange
     try:
         master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
         master.set_timeout(8.0)
@@ -410,24 +416,27 @@ def OpenConnection():
         ftp.login(user="uploadhis", passwd="111111")
         ftp.cwd("datalog/data")
         files = ftp.nlst()
+        time.sleep(1)
         sourceFolder = f"{rootFolder}support\\{machineIP}\\"
         csvFolder = f"{rootFolder}{machineIP}\\CSV\\"
         xlsFolder = f"{rootFolder}{machineIP}\\XLS\\"
+        os.mkdir(sourceFolder) if os.path.exists(sourceFolder) is False else None
 
         Single() if run is False else None
         Runtime() if exchange is False else None
         run = True
         exchange = True
     except TimeoutError:
-        print("Open connection timeout error")
+        logging.error("Open connection timeout error:Connection error")
         ConnectionErrorWindow() if failConnection is False else None
         return
     except AttributeError:
-        print("Open connection attribute error")
+        logging.error("Open connection attribute error:Connection error")
         ConnectionErrorWindow() if failConnection is False else None
         return
     except ftplib.error_perm:
-        DeviceErrorWindow()
+        logging.error("Open connection FTP error:Device error")
+        DeviceErrorWindow() if failDevice is False else None
         return
 
 
@@ -452,8 +461,9 @@ def Runtime():
 
 
 def ReadModbusTCP():
-    global panelIP, panelDate, panelTime, currentTime, filename, picname, failConnection, machineIP, connection, exchange, \
-        temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, modeIndex, statusIndex, version, tmin, tmax
+    global panelIP, panelDate, panelTime, currentTime, filename, picname, failConnection, failDevice, machineIP, \
+        connection, exchange, temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, \
+        modeIndex, statusIndex, version, tmin, tmax
     while True:
         if exchange:
             try:
@@ -485,43 +495,46 @@ def ReadModbusTCP():
                 tmin = int(getTmin[0]) - 2**16 if getTmin[0] > 2**15 else int(getTmin[0])
                 tmax = int(getTmax[0]) - 2**16 if getTmax[0] > 2**15 else int(getTmax[0])
             except UnboundLocalError:
-                print("Modbus format error")
-                DeviceErrorWindow()
+                logging.error("Modbus format error:Device error")
+                DeviceErrorWindow() if failDevice is False else None
             except TimeoutError:
-                print("Modbus timeout error")
+                logging.error("Modbus timeout error:Connection error")
                 ConnectionErrorWindow() if failConnection is False else None
             except ConnectionRefusedError:
-                print("Modbus read error")
-                DeviceErrorWindow()
+                logging.error("Modbus read error:Device error")
+                DeviceErrorWindow() if failDevice is False else None
         time.sleep(1)
 
 
 def History():
-    global failConnection, files, sourceFolder, csvFolder, xlsFolder
+    global files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
     try:
         for sourceFile in files:
             localFile = f"{sourceFolder}{sourceFile}"
-            os.mkdir(sourceFolder) if not os.path.exists(sourceFolder) else None
             with open(localFile, "wb") as file:
                 ftp.retrbinary("RETR %s" % sourceFile, file.write)
             csvFile = f"{sourceFile[:8]}.csv"
             xlsFile = f"{sourceFile[:8]}.xls"
+            while os.path.isfile(localFile) is False:
+                time.sleep(0.25)
             subprocess.run(f'{converter} /b0 /t0 "{sourceFolder}{sourceFile}" "{csvFolder}{csvFile}"', shell=True)
             subprocess.run(f'{converter} /b0 /t0 "{sourceFolder}{sourceFile}" "{xlsFolder}{xlsFile}"', shell=True)
     except NameError:
-        DeviceErrorWindow()
+        logging.error("History name error:Device error")
+        DeviceErrorWindow() if failDevice is False else None
         return
     except TimeoutError:
-        print("FTP timeout error")
+        logging.error("History timeout error:Connection error")
         ConnectionErrorWindow() if failConnection is False else None
         return
     except FileNotFoundError:
-        DeviceErrorWindow()
+        logging.error("History file not found:Device error")
+        DeviceErrorWindow() if failDevice is False else None
         return
 
 
 def DataUpdate():
-    global failConnection, connection, files, sourceFolder, csvFolder, xlsFolder
+    global connection, files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
     while True:
         time.sleep(5)
         if connection is True:
@@ -531,15 +544,14 @@ def DataUpdate():
                 with open(localFile, "wb") as file:
                     ftp.retrbinary("RETR %s" % remoteFile, file.write)
             except TimeoutError:
-                print("CSV timeout error")
+                logging.error("Cycle timeout error:Connection error")
                 ConnectionErrorWindow() if failConnection is False else None
-                return
             except NameError:
-                print("4")
-                DeviceErrorWindow()
-                return
+                logging.error("Cycle name error:Device error")
+                DeviceErrorWindow() if failDevice is False else None
             except FileNotFoundError:
-                print("Current day file not found")
+                logging.error("Cycle file not found:Device error")
+                DeviceErrorWindow() if failDevice is False else None
             currentFile = ''.join(os.listdir(sourceFolder)[-1:])
             csvFile = f"{currentFile[:8]}.csv"
             xlsFile = f"{currentFile[:8]}.xls"
@@ -629,7 +641,7 @@ def ShowSlice():
         sliceActive = True
         onlinePlot = True
         humidity = climate
-        print("Slice started")
+        logging.info("Slice started")
         Plot()
         HideSlice()
 
@@ -792,7 +804,6 @@ def Plot():
             frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
             frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
             frameCurrent = frameData.loc[frameData["Time"] >= timeBegin, frameColumns]
-            print("Normal reading data >>>", timeNow.time())
         else:
             if sliceDateFrom == sliceDateTo:
                 fileMain = csvFolder + sliceDateFrom + ".csv"
@@ -800,7 +811,6 @@ def Plot():
                 frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
                 frameCurrent = frameData.loc[(frameData["Time"] >= sliceTimeFrom) &
                                              (frameData["Time"] <= sliceTimeTo), frameColumns]
-                print("Normal reading 1-day slice data")
             else:
                 fileFrom = csvFolder + sliceDateFrom + ".csv"
                 fileTo = csvFolder + sliceDateTo + ".csv"
@@ -814,19 +824,18 @@ def Plot():
                 frameFrom = frameLocalFrom.loc[(frameLocalFrom.index % 2 == 0), frameColumns]
                 frameTo = frameLocalTo.loc[(frameLocalTo.index % 2 == 0), frameColumns]
                 frameCurrent = pandas.concat([frameFrom, frameTo], ignore_index=True)
-                print("Normal reading 2-days slice data")
     except ValueError:
-        print("Time read error")
+        logging.error("Plot time read error")
         PlotError(True)
     except FileNotFoundError:
-        print("File not found")
+        logging.error("Plot file not found")
         PlotError(True)
     except UnboundLocalError:
-        print("Time format error")
+        logging.error("Plot time format error")
         PlotError(True)
     except IndexError:
-        print("Plot 1")
-        # DeviceErrorWindow()
+        logging.error("Plot index error")
+        PlotError(True)
     figure.clear()
     lox = matplotlib.ticker.LinearLocator(24)
     graphTemp = figure.add_subplot(111)
@@ -852,10 +861,10 @@ def Plot():
             graphHum.grid(alpha=0.6, linestyle=":", color="red")
             graphHum.tick_params(labelsize=8, colors="yellow")
     except UnboundLocalError:
-        print("Plot error")
+        logging.error("Plot unbound local error")
         PlotError(True)
     except TypeError:
-        print("Error read data")
+        logging.error("Plot type error")
         PlotError(True)
     else:
         PlotError(False)
@@ -927,6 +936,15 @@ def ConnectionErrorWindow():
 
 
 def DeviceErrorWindow():
+
+    def CloseWindow():
+        global failDevice
+        failDevice = False
+        screenError.grab_release()
+        screenError.destroy()
+
+    global failDevice
+    failDevice = True
     screenError = Toplevel(root)
     screenError.title("ВНИМАНИЕ")
     screenError.geometry("300x100")
@@ -940,10 +958,9 @@ def DeviceErrorWindow():
     screenIcon = PhotoImage(file=f"{iconsFolder}icon.png")
     screenError.iconphoto(False, screenIcon)
 
-    info = tkinter.Label(master=screenError, bg="yellow", text="Невозможно установить связь!")
-    info.place(x=10, y=10, width=280)
-    buttonClose = ttk.Button(master=screenError, text="Завершить", command=sys.exit)
-    buttonClose.place(x=20, y=60, width=260)
+    tkinter.Label(master=screenError, bg="yellow", text="Невозможно установить связь!").place(x=10, y=10, width=280)
+    ttk.Button(master=screenError, style="TButton", text="Подождать", command=CloseWindow).place(x=20, y=60, width=120)
+    ttk.Button(master=screenError, style="TButton", text="Завершить", command=sys.exit).place(x=160, y=60, width=120)
 
 
 root = Tk()

@@ -23,15 +23,17 @@ import pandas
 import logging
 
 
-xLabelPos, xValuePos, yPos = 20, 190, 100
+xLabelPos, xValuePos, yPos = 20, 190, 85
 localIP, panelIP, panelDate, panelTime, currentTime, filename, picname = "", "", "", "", "", "", ""
 fgComm, fgVal, bgGlob, bgLoc = "white", "yellow", "#2B0542", "#510D70"
 status = ("НЕТ СВЯЗИ", "АВАРИЯ", "РАБОТА", "ОСТАНОВ")
 mode = ("НЕТ СВЯЗИ", "НАСТРОЙКА", "ТЕРМО", "ВЛАГА")
-statusIndex, modeIndex = 0, 0
+cycleTemp = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАГРЕВ", "ОХЛАЖДЕНИЕ")
+cycleHum = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАСЫЩЕНИЕ", "ОСУШЕНИЕ")
+statusIndex, modeIndex, cycleTempIndex, cycleHumIndex = 0, 0, 0, 0
 listIP = {}
 temperatureCurrent, temperatureSet = -1.1, -1.1
-humidityCurrent, humiditySet = 1.1, 1.1
+humidityCurrent, humiditySet = 1, 1
 version, tmin, tmax = 0, 0, 0
 runFolder = os.path.abspath(os.curdir)
 rootFolder = runFolder if len(runFolder) < 4 else runFolder + "\\"
@@ -49,13 +51,12 @@ heat = cold = idleT = wet = dry = idleH = False
 onlinePlot = True
 humidity = False
 failConnection = failDevice = False
-dataStop = False
 currentMachine = StringVar
 run = False
 connection = exchange = False
 files = []
-logging.basicConfig(filename=f"{rootFolder}sys.log", level=logging.INFO)
-logging.info(f"New session run from {rootFolder}")
+logging.basicConfig(filename=f"{rootFolder}sys.log", level=logging.ERROR)
+logging.error(f"New session run from {rootFolder}")
 
 
 def ObjectsPlace():
@@ -64,39 +65,47 @@ def ObjectsPlace():
     panelTimeLabel.place(x=880, y=35, width=100)
     armIPLabel.place(x=350, y=15)
     panelIPLabel.place(x=350, y=35)
-    statusLabel.place(x=xLabelPos, y=yPos, width=150)
-    statusValue.place(x=xValuePos, y=yPos, width=100)
+    statusLabel.place(x=xLabelPos, y=yPos + 0, width=150)
+    statusValue.place(x=xValuePos, y=yPos + 0, width=100)
     modeLabel.place(x=xLabelPos, y=yPos + 20, width=150)
     modeValue.place(x=xValuePos, y=yPos + 20, width=100)
     tempCurLabel.place(x=xLabelPos, y=yPos + 50, width=150)
     tempCurValue.place(x=xValuePos, y=yPos + 50, width=100)
-    tempSetLabel.place(x=xLabelPos, y=yPos + 70, width=150)
-    tempSetValue.place(x=xValuePos, y=yPos + 70, width=100)
-    humCurLabel.place(x=xLabelPos, y=yPos + 100, width=150)
-    humCurValue.place(x=xValuePos, y=yPos + 100, width=100)
-    humSetLabel.place(x=xLabelPos, y=yPos + 120, width=150)
-    humSetValue.place(x=xValuePos, y=yPos + 120, width=100)
+    tempSetLabel.place(x=xLabelPos, y=yPos + 67, width=150)
+    tempSetValue.place(x=xValuePos, y=yPos + 67, width=100)
+    tempCycleLabel.place(x=xLabelPos, y=yPos + 84, width=150)
+    tempCycleValue.place(x=xValuePos, y=yPos + 84, width=100)
+    humCurLabel.place(x=xLabelPos, y=yPos + 114, width=150)
+    humCurValue.place(x=xValuePos, y=yPos + 114, width=100)
+    humSetLabel.place(x=xLabelPos, y=yPos + 131, width=150)
+    humSetValue.place(x=xValuePos, y=yPos + 131, width=100)
+    humCycleLabel.place(x=xLabelPos, y=yPos + 148, width=150)
+    humCycleValue.place(x=xValuePos, y=yPos + 148, width=100)
     labelPeriods.place(x=670, y=90)
 
 
 def LabelsShow():
-    logoLabel["text"] = f"© 'МИР ОБОРУДОВАНИЯ', Санкт-Петербург, 2024"
+    logoLabel["text"] = "© 'МИР ОБОРУДОВАНИЯ', Санкт-Петербург, 2024"
     armIPLabel["text"] = f"IP адрес рабочей станции: {localIP}"
-    panelIPLabel["text"] = f'IP адрес климатической камеры: {panelIP}'
+    panelIPLabel["text"] = f"IP адрес климатической камеры: {panelIP}"
     panelDateLabel["text"] = panelDate
     panelTimeLabel["text"] = panelTime
-    statusLabel["text"] = f"Статус камеры:"
+    statusLabel["text"] = "Статус камеры:"
     statusValue["text"] = status[statusIndex]
-    modeLabel["text"] = f"Режим работы:"
+    modeLabel["text"] = "Режим работы:"
     modeValue["text"] = mode[modeIndex]
-    tempCurLabel["text"] = f"Текущая температура:"
+    tempCurLabel["text"] = "Текущая температура:"
     tempCurValue["text"] = f"{temperatureCurrent} °C"
-    tempSetLabel["text"] = f"Уставка по температуре:"
+    tempSetLabel["text"] = "Уставка по температуре:"
     tempSetValue["text"] = f"{temperatureSet} °C"
-    humCurLabel["text"] = f"Текущая влажность:"
-    humCurValue["text"] = f"{humidityCurrent} °C"
-    humSetLabel["text"] = f"Уставка по влажности:"
-    humSetValue["text"] = f"{humiditySet} °C"
+    tempCycleLabel["text"] = "Технологический цикл:"
+    tempCycleValue["text"] = cycleTemp[cycleTempIndex]
+    humCurLabel["text"] = "Текущая влажность:"
+    humCurValue["text"] = f"{humidityCurrent} %"
+    humSetLabel["text"] = "Уставка по влажности:"
+    humSetValue["text"] = f"{humiditySet} %"
+    humCycleLabel["text"] = "Технологический цикл:"
+    humCycleValue["text"] = cycleHum[cycleHumIndex]
     labelPeriods["text"] = "Диапазон отображения:"
 
     root.after(1000, LabelsShow)
@@ -154,45 +163,57 @@ def GlobalStatus():
                     idleH = False
                     HideGif("idleH")
 
-    global baseStatus, baseMode, heat, cold, idleT, wet, dry, idleH, \
+    global baseStatus, baseMode, heat, cold, idleT, wet, dry, idleH, cycleTempIndex, cycleHumIndex, \
         temperatureCurrent, temperatureSet, humidityCurrent, humiditySet
     baseStatus = "Run" if statusIndex == 2 else "Stop"
     if modeIndex == 2:
         baseMode = "Temperature"
+        humCurLabel["fg"] = humSetLabel["fg"] = humCycleLabel["fg"] = "dim gray"
+        humCurValue["fg"] = humSetValue["fg"] = humCycleValue["fg"] = "dim gray"
     if modeIndex == 3:
         baseMode = "Humidity"
+        humCurLabel["fg"] = humSetLabel["fg"] = humCycleLabel["fg"] = fgComm
+        humCurValue["fg"] = humSetValue["fg"] = humCycleValue["fg"] = fgComm
     if (baseStatus == "Run") & (modeIndex >= 2):
         if temperatureCurrent <= (temperatureSet - 2):
+            cycleTempIndex = 2
             ChangeTempStatus("heat", True) if heat is False else None
         else:
             ChangeTempStatus("heat", False) if heat is True else None
         if temperatureCurrent >= (temperatureSet + 2):
+            cycleTempIndex = 3
             ChangeTempStatus("cold", True) if cold is False else None
         else:
             ChangeTempStatus("cold", False) if cold is True else None
         if (temperatureCurrent > (temperatureSet - 2)) & (temperatureCurrent < (temperatureSet + 2)):
+            cycleTempIndex = 1
             ChangeTempStatus("idleT", True) if idleT is False else None
         else:
             ChangeTempStatus("idleT", False) if idleT is True else None
     else:
+        cycleTempIndex = 0
         ChangeTempStatus("heat", False) if heat is True else None
         ChangeTempStatus("cold", False) if cold is True else None
         ChangeTempStatus("idleT", False) if idleT is True else None
 
     if (baseStatus == "Run") & (modeIndex == 3):
         if humidityCurrent <= (humiditySet - 2):
+            cycleHumIndex = 2
             ChangeHumStatus("wet", True) if wet is False else None
         else:
             ChangeHumStatus("wet", False) if wet is True else None
         if humidityCurrent >= (humiditySet + 2):
+            cycleHumIndex = 3
             ChangeHumStatus("dry", True) if dry is False else None
         else:
             ChangeHumStatus("dry", False) if dry is True else None
         if (humidityCurrent > (humiditySet - 2)) & (humidityCurrent < (humiditySet + 2)):
+            cycleHumIndex = 1
             ChangeHumStatus("idleH", True) if idleH is False else None
         else:
             ChangeHumStatus("idleH", False) if idleH is True else None
     else:
+        cycleHumIndex = 0
         ChangeHumStatus("wet", False) if wet is True else None
         ChangeHumStatus("dry", False) if dry is True else None
         ChangeHumStatus("idleH", False) if idleH is True else None
@@ -487,8 +508,8 @@ def ReadModbusTCP():
                 picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
                 temperatureCurrent = (getTempCur[0] - 2**16) / 10 if getTempCur[0] > 2**15 else getTempCur[0] / 10
                 temperatureSet = (getTempSet[0] - 2**16) / 10 if getTempSet[0] > 2**15 else getTempSet[0] / 10
-                humidityCurrent = getHumCur[0] / 10
-                humiditySet = getHumSet[0]
+                humidityCurrent = int(getHumCur[0] / 10)
+                humiditySet = int(getHumSet[0])
                 statusIndex = int(getStatus[0])
                 modeIndex = int(getMode[0])
                 version = int(getVersion[0])
@@ -506,6 +527,13 @@ def ReadModbusTCP():
         time.sleep(1)
 
 
+def RunInBackground(command):
+    try:
+        subprocess.Popen(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        logging.error(f"Converter error:{e}")
+
+
 def History():
     global files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
     try:
@@ -517,8 +545,10 @@ def History():
             xlsFile = f"{sourceFile[:8]}.xls"
             while os.path.isfile(localFile) is False:
                 time.sleep(0.25)
-            subprocess.run(f'{converter} /b0 /t0 "{sourceFolder}{sourceFile}" "{csvFolder}{csvFile}"', shell=True)
-            subprocess.run(f'{converter} /b0 /t0 "{sourceFolder}{sourceFile}" "{xlsFolder}{xlsFile}"', shell=True)
+            csvconvert = [converter, '/b0', '/t0', f"{sourceFolder}{sourceFile}", f"{csvFolder}{csvFile}"]
+            xlsconvert = [converter, '/b0', '/t0', f"{sourceFolder}{sourceFile}", f"{xlsFolder}{xlsFile}"]
+            RunInBackground(csvconvert)
+            RunInBackground(xlsconvert)
     except NameError:
         logging.error("History name error:Device error")
         DeviceErrorWindow() if failDevice is False else None
@@ -536,7 +566,7 @@ def History():
 def DataUpdate():
     global connection, files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
     while True:
-        time.sleep(5)
+        time.sleep(5.9)
         if connection is True:
             try:
                 remoteFile = ''.join(files[-1:])
@@ -555,8 +585,10 @@ def DataUpdate():
             currentFile = ''.join(os.listdir(sourceFolder)[-1:])
             csvFile = f"{currentFile[:8]}.csv"
             xlsFile = f"{currentFile[:8]}.xls"
-            subprocess.run(f'{converter} /b0 /t0 "{sourceFolder}{currentFile}" "{csvFolder}{csvFile}"', shell=True)
-            subprocess.run(f'{converter} /b0 /t0 "{sourceFolder}{currentFile}" "{xlsFolder}{xlsFile}"', shell=True)
+            csvconvert = [converter, '/b0', '/t0', f"{sourceFolder}{currentFile}", f"{csvFolder}{csvFile}"]
+            xlsconvert = [converter, '/b0', '/t0', f"{sourceFolder}{currentFile}", f"{xlsFolder}{xlsFile}"]
+            RunInBackground(csvconvert)
+            RunInBackground(xlsconvert)
 
 
 def UserControl():
@@ -578,7 +610,9 @@ def UserControl():
     graphPeriod = ttk.Combobox(values=graphLabels, textvariable=graphDefault, width=21, state="readonly",
                                background=bgLoc, foreground=bgLoc)
     graphPeriod.place(x=820, y=90)
-    buttonSave.place(x=830, y=225, width=140, height=30)
+    buttonOpenHistory.place(x=670, y=170, width=300)
+    buttonSaveFig.place(x=840, y=199, width=130)
+    buttonOpenFig.place(x=840, y=227, width=130)
     buttonRename.place(x=360, y=115, width=115)
     buttonAdd.place(x=485, y=115, width=115)
     buttonStatus.place(x=360, y=155, width=240)
@@ -591,8 +625,7 @@ def UserControl():
     machinesList.bind("<<ComboboxSelected>>", CurrentMachine)
     machinesList.place(x=360, y=90, width=240)
     navi = NavigationToolbar2Tk(canvasGraph)
-    navi.configure(background=bgLoc)
-    navi.place(x=670, y=220, width=155, height=40)
+    navi.place(x=671, y=200, width=155, height=50)
 
 
 def GetPeriod():
@@ -614,12 +647,11 @@ def GetPeriod():
         sliceActive = False
         buttonEdit.destroy()
         HideSlice()
-        print("Slice cleared")
         Plot()
     if choice != 6:
         if showButton is False:
             buttonOnline = ttk.Button(root, style="TButton", command=StartStopPlot)
-            buttonOnline.place(x=670, y=180, width=300)
+            buttonOnline.place(x=670, y=120, width=300)
             showButton = True
         buttonOnline["text"] = "Остановить выборку в реальном времени" if onlinePlot \
             else "Возобновить выборку в реальном времени"
@@ -703,7 +735,7 @@ def ShowSlice():
             hourFinal.set(value=panelTime[0:2])
             minutesFinal.set(value=panelTime[5:7])
 
-    global sliceFrame
+    global sliceFrame, version
     dayValidControl = root.register(DateValidControl)
     dayInitial = StringVar(value=panelDate[0:2])
     dayFinal = StringVar(value=panelDate[0:2])
@@ -717,9 +749,10 @@ def ShowSlice():
 
     sliceFrame = tkinter.Frame(master=root, borderwidth=1, width=300, height=140, bg=bgLoc)
     sliceFrame.place(x=670, y=120)
-    ttk.Button(master=sliceFrame, text="< °C >", command=lambda: GetSlice(False), style="TButton")\
+    ttk.Button(master=sliceFrame, text="<°C>", command=lambda: GetSlice(False), style="TButton")\
         .place(x=0, y=110, width=150, height=25)
-    ttk.Button(master=sliceFrame, text="< °C > + < %RH >", command=lambda: GetSlice(True), style="TButton") \
+    humstate = "normal" if version==2 else "disabled"
+    ttk.Button(master=sliceFrame, text="<°C> & <%RH>", command=lambda: GetSlice(True), style="TButton", state=humstate) \
         .place(x=160, y=110, width=150, height=25)
 
     tkinter.Label(master=sliceFrame, text="Начало выборки", anchor="w", bg=bgLoc, fg="white").place(x=0, y=10, height=20)
@@ -803,14 +836,17 @@ def Plot():
             timeBegin = str(datetime.strptime(str(timeNow-timeDif), "%H:%M:%S").time())
             frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
             frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
-            frameCurrent = frameData.loc[frameData["Time"] >= timeBegin, frameColumns]
+            if all(column in frameData.columns for column in frameColumns):
+                frameTo = frameData.loc[frameData["Time"] >= timeBegin, frameColumns]
+                frameCurrent = pandas.DataFrame(frameTo)
         else:
             if sliceDateFrom == sliceDateTo:
                 fileMain = csvFolder + sliceDateFrom + ".csv"
                 frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
                 frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
-                frameCurrent = frameData.loc[(frameData["Time"] >= sliceTimeFrom) &
-                                             (frameData["Time"] <= sliceTimeTo), frameColumns]
+                frameTo = frameData.loc[(frameData["Time"] >= sliceTimeFrom) &
+                                        (frameData["Time"] <= sliceTimeTo), frameColumns]
+                frameCurrent = pandas.DataFrame(frameTo)
             else:
                 fileFrom = csvFolder + sliceDateFrom + ".csv"
                 fileTo = csvFolder + sliceDateTo + ".csv"
@@ -824,18 +860,9 @@ def Plot():
                 frameFrom = frameLocalFrom.loc[(frameLocalFrom.index % 2 == 0), frameColumns]
                 frameTo = frameLocalTo.loc[(frameLocalTo.index % 2 == 0), frameColumns]
                 frameCurrent = pandas.concat([frameFrom, frameTo], ignore_index=True)
-    except ValueError:
-        logging.error("Plot time read error")
+    except Exception as e:
         PlotError(True)
-    except FileNotFoundError:
-        logging.error("Plot file not found")
-        PlotError(True)
-    except UnboundLocalError:
-        logging.error("Plot time format error")
-        PlotError(True)
-    except IndexError:
-        logging.error("Plot index error")
-        PlotError(True)
+        logging.error("Data block error:", e, exc_info=True)
     figure.clear()
     lox = matplotlib.ticker.LinearLocator(24)
     graphTemp = figure.add_subplot(111)
@@ -860,12 +887,9 @@ def Plot():
                                   y2=frameCurrent["HumiditySet"], alpha=0.2)
             graphHum.grid(alpha=0.6, linestyle=":", color="red")
             graphHum.tick_params(labelsize=8, colors="yellow")
-    except UnboundLocalError:
-        logging.error("Plot unbound local error")
+    except Exception as e:
         PlotError(True)
-    except TypeError:
-        logging.error("Plot type error")
-        PlotError(True)
+        logging.error("Plot block error:", e, exc_info=True)
     else:
         PlotError(False)
     figure.autofmt_xdate()
@@ -881,6 +905,20 @@ def Plot():
 def SaveFigure():
     os.mkdir(picFolder) if not os.path.isdir(picFolder) else None
     figure.savefig(f"{picFolder}{picname}")
+    buttonOpenFig["state"] = "normal"
+
+
+def OpenFigure():
+    if os.path.exists(picFolder) & bool(os.listdir(picFolder)):
+        buttonOpenFig["state"] = "normal"
+        os.system(f"explorer.exe {picFolder}")
+    else:
+        buttonOpenFig["state"] = "disabled"
+
+
+def OpenHistory():
+    if os.path.exists(xlsFolder):
+        os.system(f"explorer.exe {xlsFolder}")
 
 
 def ConnectionErrorWindow():
@@ -1009,10 +1047,14 @@ tempCurLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
 tempCurValue = Label(fg=fgVal, bg=bgLoc)
 tempSetLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
 tempSetValue = Label(fg=fgVal, bg=bgLoc)
+tempCycleLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+tempCycleValue = Label(fg=fgVal, bg=bgLoc)
 humCurLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
 humCurValue = Label(fg=fgVal, bg=bgLoc)
 humSetLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
 humSetValue = Label(fg=fgVal, bg=bgLoc)
+humCycleLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+humCycleValue = Label(fg=fgVal, bg=bgLoc)
 labelPeriods = Label(anchor="w", fg=fgComm, bg=bgLoc)
 
 figure = Figure(figsize=(9.5, 4.7), dpi=100, facecolor=bgLoc)
@@ -1021,7 +1063,9 @@ canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
 canvasError = tkinter.Canvas(master=root, bg="red", width=100, height=100)
 
 ttk.Style().configure("TButton", font="helvetica 8", background=bgGlob, relief="sunken", border=0, foreground="blue")
-buttonSave = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
+buttonSaveFig = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
+buttonOpenFig = ttk.Button(command=OpenFigure, style="TButton", text="Открыть график")
+buttonOpenHistory = ttk.Button(command=OpenHistory, style="TButton", text="Открыть папку с суточными архивами")
 buttonRename = ttk.Button(command=ChangeName, style="TButton", text="Переименовать")
 buttonAdd = ttk.Button(command=lambda: InputIP(empty=False), style="TButton", text="Добавить")
 buttonStatus = ttk.Button(style="TButton", text="ПУСК / СТОП", state="disabled")

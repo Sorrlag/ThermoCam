@@ -558,15 +558,24 @@ def WriteModbusTCP():
 
 
 def Convert(fromfolder, fromfile, tocsvfolder, tocsvfile, toxlsfolder, toxlsfile):
+
+    def RunProcess(command):
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        try:
+            process = subprocess.Popen(command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                       startupinfo=startupinfo)
+            stdout, stderr = process.communicate()
+            if process.returncode != 0:
+                logging.error(f"Error run converter: {stderr.decode()}")
+        except Exception as excProcess:
+            logging.error("Subprocess error:", excProcess, exc_info=True)
+
     semaphore.acquire()
     try:
         csvconvert = [converter, '/b0', '/t0', os.path.join(fromfolder, fromfile), os.path.join(tocsvfolder, tocsvfile)]
-        # xlsconvert = [converter, '/b0', '/t0', os.path.join(fromfolder, fromfile), os.path.join(toxlsfolder, toxlsfile)]
-        # csvprocess =
-        subprocess.Popen(csvconvert, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # csvprocess.communicate()
-        # xlsprocess = subprocess.Popen(xlsconvert, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # xlsprocess.communicate()
+        RunProcess(csvconvert)
     except Exception as excConverter:
         logging.error("Converter error:", excConverter, exc_info=True)
     finally:
@@ -600,7 +609,7 @@ def History():
 def DataUpdate():
     global connection, files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
     while True:
-        time.sleep(9.9)
+        time.sleep(10)
         if connection is True:
             try:
                 remoteFile = files[-1]

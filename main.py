@@ -4,6 +4,7 @@ import os
 import ftplib
 import ftputil
 import sys
+import io
 import time
 import threading
 import re
@@ -58,6 +59,7 @@ humidity = False
 failConnection = failDevice = False
 currentMachine = StringVar
 run = False
+draw = False
 connection = exchange = False
 files = []
 logging.basicConfig(filename=f"{rootFolder}sys.log", level=logging.ERROR)
@@ -580,7 +582,7 @@ def Convert():
         startupinfo.wShowWindow = subprocess.SW_HIDE
         creationflags = subprocess.CREATE_NO_WINDOW
         try:
-            process = subprocess.Popen(command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                        creationflags=creationflags, startupinfo=startupinfo)
             if process.returncode != 0:
                 logging.error(f"Error run converter")
@@ -699,7 +701,6 @@ def GetPeriod():
     def StartStopPlot():
         global onlinePlot
         onlinePlot = not onlinePlot
-        # Plot() if onlinePlot else None
 
     global showSlice, sliceActive, buttonEdit, buttonOnline, onlinePlot, showButton
     choice = graphLabels.index(graphDefault.get())
@@ -713,7 +714,6 @@ def GetPeriod():
         sliceActive = False
         buttonEdit.destroy()
         HideSlice()
-        # Plot()
     if choice != 6:
         if showButton is False:
             buttonOnline = ttk.Button(root, style="TButton", command=StartStopPlot)
@@ -890,53 +890,62 @@ def Plot():
                 showError = False
 
     def ValidCheck(frame):
-        issues = []
+        correct = True
         frameCheck = pandas.DataFrame(columns=frameColumns)
         try:
             frameCheck["Time"] = pandas.to_datetime(frame["Time"], format="%H:%M:%S")
         except Exception as excFrame:
-            issues.append("Time is incorrect")
+            correct = False
         if frame.isnull().values.any():
-            issues.append("NaN values")
+            correct = False
+        if frame.duplicated().any():
+            correct = False
         if list(frame) != frameColumns:
-            issues.append("Columns are incorrect")
-        if issues:
-            return False
-        else:
-            return True
+            correct = False
+        for column in frame.columns:
+            if column != "Time":
+                if pandas.api.types.is_numeric_dtype(frame[column]) is False:
+                    correct = False
+        return correct
 
-
-    global sliceActive, baseMode, onlinePlot, humidity, csvFolder, frameCurrent, frameColumns
+    global sliceActive, baseMode, onlinePlot, humidity, csvFolder, frameData, frameCurrent, frameColumns, draw
     while True:
         if onlinePlot is True:
             semaphore.acquire()
             try:
                 if not sliceActive:
                     chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
-                    fileList = os.listdir(csvFolder)
+                    fileList = sorted(os.listdir(csvFolder))
                     fileMain = os.path.join(csvFolder, fileList[-1])
-                    if (currentTime != "") & (chosenTime != ""):
+                    if currentTime and chosenTime:
                         timeNow = datetime.strptime(currentTime, "%H:%M:%S")
                         timeDif = datetime.strptime(chosenTime, "%H:%M:%S")
                         if (timeNow-timeDif).days == 0:
                             timeBegin = str(datetime.strptime(str(timeNow-timeDif), "%H:%M:%S").time())
-                            frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
+                            try:
+                                frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
+                            except Exception as excRead:
+                                logging.error("Error reading CSV file:", exc_info=True)
                             frameTo = pandas.DataFrame(frameData.loc[frameData["Time"] >= timeBegin, frameColumns])
                             if ValidCheck(frameTo):
                                 frameCurrent = frameTo
-                            # nowvalues = [str(currentTime), str(temperatureCurrent), str(temperatureSet), str(humidityCurrent), str(humiditySet)]
-                            # frameNow = pandas.DataFrame([nowvalues], columns=frameColumns)
-                            # frameCurrent = pandas.concat([frameCurrent, frameNow], ignore_index=True)
+
                         else:
                             fileFrom = os.path.join(csvFolder, fileList[-2])
                             fileTo = os.path.join(csvFolder, fileList[-1])
                             timeFrom = ((timeNow - timeDif) + datetime.strptime("23:59:59", "%H:%M:%S")).time()
-                            frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
-                            frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
-                            frameLocalFrom = pandas.DataFrame(frameDataFrom.loc[((frameDataFrom["Time"] >= str(timeFrom)) &
-                                                                                 (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
-                            frameLocalTo = pandas.DataFrame(frameDataTo.loc[frameDataTo["Time"] >= "00:00:00", frameColumns])
-                            frameCurrent = pandas.concat([frameLocalFrom, frameLocalTo], ignore_index=True)
+                            try:
+                                frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
+                                frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
+                                frameLocalFrom = pandas.DataFrame(frameDataFrom.loc[((frameDataFrom["Time"] >= str(timeFrom)) &
+                                                                                     (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
+                                frameLocalTo = pandas.DataFrame(frameDataTo.loc[frameDataTo["Time"] >= "00:00:00", frameColumns])
+                                if ValidCheck(frameLocalFrom) & ValidCheck(frameLocalTo):
+                                    frameCurrent = pandas.concat([frameLocalFrom, frameLocalTo], ignore_index=True)
+                            except Exception as excRead:
+                                logging.error("Error reading CSV file:", exc_info=True)
+                    else:
+                        PlotError(True)
                 else:
                     if sliceDateFrom == sliceDateTo:
                         fileMain = csvFolder + sliceDateFrom + ".csv"
@@ -988,12 +997,16 @@ def Plot():
                         graphHum.tick_params(labelsize=8, colors="yellow")
                 except Exception as excPlot:
                     PlotError(True)
-                    logging.error("Plot block error:", excPlot, exc_info=True)
+                    logging.error("Plot block error:", exc_info=True)
                 else:
                     PlotError(False)
+            else:
+                PlotError(True)
             figure.autofmt_xdate()
             canvasGraph.draw()
-            canvasGraph.get_tk_widget().place(x=20, y=290)
+            if draw is False:
+                canvasGraph.get_tk_widget().place(x=20, y=290)
+                draw = True
             if sliceActive:
                 humidity = False
                 onlinePlot = False

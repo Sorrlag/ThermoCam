@@ -2,6 +2,7 @@ import subprocess
 import socket
 import os
 import ftplib
+import ftputil
 import sys
 import time
 import threading
@@ -34,6 +35,8 @@ statusIndex, modeIndex, cycleTempIndex, cycleHumIndex = 0, 0, 0, 0
 listIP = {}
 frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
 frameCurrent = pandas.DataFrame(columns=frameColumns)
+ipColumns = ["ip", "name"]
+frameIP = pandas.DataFrame(columns=ipColumns)
 temperatureCurrent, temperatureSet = -1.1, -1.1
 humidityCurrent, humiditySet = 1, 1
 version, tmin, tmax = 0, 0, 0
@@ -50,7 +53,7 @@ sliceActive = sliceChange = showSlice = showError = showButton = False
 sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo = "", "", "", ""
 baseMode, baseStatus = "Temperature", "Stop"
 heat = cold = idleT = wet = dry = idleH = False
-onlinePlot = True
+onlinePlot = False
 humidity = False
 failConnection = failDevice = False
 currentMachine = StringVar
@@ -59,6 +62,10 @@ connection = exchange = False
 files = []
 logging.basicConfig(filename=f"{rootFolder}sys.log", level=logging.ERROR)
 logging.error(f"New session run from {rootFolder}")
+master = None
+ftp = None
+machinesList = None
+readdata = True
 
 
 def ObjectsPlace():
@@ -356,7 +363,7 @@ def CheckIP(init):
         else:
             machineName = "Климатическая камера"
             listIP = {machineIP: machineName}
-            frameIP = pandas.DataFrame(list(listIP.items()), columns=["ip", "name"])
+            frameIP = pandas.DataFrame(list(listIP.items()), columns=ipColumns)
     else:
         listIP = dict(zip(frameIP["ip"], frameIP["name"]))
         if init:
@@ -368,7 +375,7 @@ def CheckIP(init):
             else:
                 machineName = "Климатическая камера"
                 listIP[machineIP] = machineName
-            frameIP = pandas.DataFrame(list(listIP.items()), columns=["ip", "name"])
+            frameIP = pandas.DataFrame(list(listIP.items()), columns=ipColumns)
     OpenConnection() if not (frameIP.empty & init) else None
 
 
@@ -472,20 +479,22 @@ def OpenConnection():
 
 def Single():
     try:
-        threadModbus.start() if threadModbus.is_alive() is False else None
-        threadFTP.start() if threadFTP.is_alive() is False else None
+        threadModbus.start()
+        threadFTP.start()
+        LabelsShow()
+        UserControl()
+        GetPeriod()
+        GlobalStatus()
+        time.sleep(2)
+        threadPlot.start()
+        threadConvert.start()
     except RuntimeError:
         pass
-    LabelsShow()
-    UserControl()
-    GetPeriod()
-    GlobalStatus()
-    time.sleep(2)
-    Plot()
+    # Plot()
 
 
 def Runtime():
-    History()
+    # History()
     UpdateList()
 
 
@@ -501,21 +510,25 @@ def UpdateList():
             exchange = False
             OpenConnection()
 
-    global frameIP, currentMachine, machinesList, machineIP, machineName
+    global frameIP, currentMachine, machinesList, machineIP, machineName, onlinePlot
     currentMachine.set(value=f"{machineIP} :: {machineName}")
     machinesList["values"] = [f"{k} :: {v}" for k, v in listIP.items()]
     machinesList.bind("<<ComboboxSelected>>", CurrentMachine)
-    frameIP = pandas.DataFrame(list(listIP.items()), columns=["ip", "name"])
+    frameIP = pandas.DataFrame(list(listIP.items()), columns=ipColumns)
     frameIP.to_csv(f"{rootFolder}config.ini", index=False)
+    onlinePlot = True
 
 
 def ReadModbusTCP():
     global panelIP, panelDate, panelTime, currentTime, filename, picname, failConnection, failDevice, machineIP, \
         connection, exchange, temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, \
-        modeIndex, statusIndex, version, tmin, tmax
+        modeIndex, statusIndex, version, tmin, tmax, master
     while True:
         if exchange:
             try:
+                master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
+                master.set_timeout(8.0)
+
                 getSys = master.execute(1, communicate.READ_INPUT_REGISTERS, 10099, 10)
                 getTempCur = master.execute(1, communicate.READ_INPUT_REGISTERS, 10109, 1)
                 getTempSet = master.execute(1, communicate.READ_INPUT_REGISTERS, 10110, 1)
@@ -543,6 +556,8 @@ def ReadModbusTCP():
                 version = int(getVersion[0])
                 tmin = int(getTmin[0]) - 2**16 if getTmin[0] > 2**15 else int(getTmin[0])
                 tmax = int(getTmax[0]) - 2**16 if getTmax[0] > 2**15 else int(getTmax[0])
+            except TimeoutError:
+                ConnectionErrorWindow() if failConnection else None
             except Exception as excModbus:
                 logging.error("Modbus error:", excModbus, exc_info=True)
                 ConnectionErrorWindow() if failConnection else None
@@ -557,29 +572,38 @@ def WriteModbusTCP():
         master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10119, 1, output_value=1)
 
 
-def Convert(fromfolder, fromfile, tocsvfolder, tocsvfile, toxlsfolder, toxlsfile):
+def Convert():
 
     def RunProcess(command):
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
+        creationflags = subprocess.CREATE_NO_WINDOW
         try:
             process = subprocess.Popen(command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                       startupinfo=startupinfo)
-            stdout, stderr = process.communicate()
+                                       creationflags=creationflags, startupinfo=startupinfo)
             if process.returncode != 0:
-                logging.error(f"Error run converter: {stderr.decode()}")
+                logging.error(f"Error run converter")
         except Exception as excProcess:
-            logging.error("Subprocess error:", excProcess, exc_info=True)
+            logging.error("Subprocess error", exc_info=True)
+        finally:
+            semaphore.release()
 
-    semaphore.acquire()
-    try:
-        csvconvert = [converter, '/b0', '/t0', os.path.join(fromfolder, fromfile), os.path.join(tocsvfolder, tocsvfile)]
-        RunProcess(csvconvert)
-    except Exception as excConverter:
-        logging.error("Converter error:", excConverter, exc_info=True)
-    finally:
-        semaphore.release()
+    global sourceFolder, csvFolder, readdata
+    while True:
+        if True:
+            semaphore.acquire()
+            try:
+                currentFile = os.listdir(sourceFolder)[-1]
+                csvFile = f"{currentFile[:8]}.csv"
+                xlsFile = f"{currentFile[:8]}.xls"
+                csvconvert = [converter, os.path.join(sourceFolder, currentFile), os.path.join(csvFolder, csvFile)]
+                RunProcess(csvconvert)
+            except Exception as excConverter:
+                logging.error("Conversion error", exc_info=True)
+            finally:
+                semaphore.release()
+        time.sleep(11)
 
 
 def History():
@@ -607,22 +631,41 @@ def History():
 
 
 def DataUpdate():
-    global connection, files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
+
+    def AccessToFile(host, file):
+        try:
+            with host.open(file, "r") as ff:
+                return True
+        except Exception as excHost:
+            return False
+
+    global connection, files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice, ftp, readdata
     while True:
-        time.sleep(10)
-        if connection is True:
+        time.sleep(15)
+        # if connection is True:
+        if True:
+            semaphore.acquire()
+            # readdata = True
             try:
-                remoteFile = files[-1]
-                localFile = os.path.join(sourceFolder, remoteFile)
-                with open(localFile, "wb") as file:
-                    ftp.retrbinary("RETR %s" % remoteFile, file.write)
-            except Exception as excData:
-                logging.error("Cycle error:", excData, exc_info=True)
+                with ftputil.FTPHost(machineIP, "uploadhis", "111111") as ftphost:
+                    datadir = "/datalog/data/"
+                    if ftphost.path.exists(datadir):
+                        ftphost.chdir(datadir)
+                        remoteFile = ftphost.listdir(datadir)[-1]
+                        if ftphost.path.isfile(remoteFile) & AccessToFile(ftphost, remoteFile):
+                            localFile = os.path.join(sourceFolder, remoteFile)
+                            ftphost.download(remoteFile, localFile)
+                time.sleep(1)
+                # readdata = False
+            except TypeError:
                 ConnectionErrorWindow() if failConnection else None
-            currentFile = os.listdir(sourceFolder)[-1]
-            csvFile = f"{currentFile[:8]}.csv"
-            xlsFile = f"{currentFile[:8]}.xls"
-            Convert(sourceFolder, currentFile, csvFolder, csvFile, xlsFolder, xlsFile)
+            except ConnectionResetError:
+                ConnectionErrorWindow() if failConnection else None
+            except Exception as excData:
+                logging.error("Cycle error", exc_info=True)
+                ConnectionErrorWindow() if failConnection else None
+            finally:
+                semaphore.release()
 
 
 def UserControl():
@@ -656,7 +699,7 @@ def GetPeriod():
     def StartStopPlot():
         global onlinePlot
         onlinePlot = not onlinePlot
-        Plot() if onlinePlot else None
+        # Plot() if onlinePlot else None
 
     global showSlice, sliceActive, buttonEdit, buttonOnline, onlinePlot, showButton
     choice = graphLabels.index(graphDefault.get())
@@ -670,7 +713,7 @@ def GetPeriod():
         sliceActive = False
         buttonEdit.destroy()
         HideSlice()
-        Plot()
+        # Plot()
     if choice != 6:
         if showButton is False:
             buttonOnline = ttk.Button(root, style="TButton", command=StartStopPlot)
@@ -697,7 +740,7 @@ def ShowSlice():
         onlinePlot = True
         humidity = climate
         logging.info("Slice started")
-        Plot()
+        # Plot()
         HideSlice()
 
     def TimeValidControl():
@@ -846,98 +889,115 @@ def Plot():
                 canvasError.destroy()
                 showError = False
 
-    global sliceActive, baseMode, onlinePlot, humidity, csvFolder, frameCurrent, frameColumns
-    if onlinePlot is False:
-        return
-    chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
-    semaphore.acquire()
-    try:
-        if not sliceActive:
-            fileList = os.listdir(csvFolder)
-            fileMain = os.path.join(csvFolder, fileList[-1])
-            if (currentTime != "") & (chosenTime != ""):
-                timeNow = datetime.strptime(currentTime, "%H:%M:%S")
-                timeDif = datetime.strptime(chosenTime, "%H:%M:%S")
-                if (timeNow-timeDif).days == 0:
-                    timeBegin = str(datetime.strptime(str(timeNow-timeDif), "%H:%M:%S").time())
-                    frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
-                    frameTo = frameData.loc[frameData["Time"] >= timeBegin, frameColumns]
-                    frameCurrent = pandas.DataFrame(frameTo)
-                    # nowvalues = [str(currentTime), str(temperatureCurrent), str(temperatureSet), str(humidityCurrent), str(humiditySet)]
-                    # frameNow = pandas.DataFrame([nowvalues], columns=frameColumns)
-                    # frameCurrent = pandas.concat([frameCurrent, frameNow], ignore_index=True)
-                else:
-                    fileFrom = os.path.join(csvFolder, fileList[-2])
-                    fileTo = os.path.join(csvFolder, fileList[-1])
-                    timeFrom = ((timeNow - timeDif) + datetime.strptime("23:59:59", "%H:%M:%S")).time()
-                    frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
-                    frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
-                    frameLocalFrom = pandas.DataFrame(frameDataFrom.loc[((frameDataFrom["Time"] >= str(timeFrom)) &
-                                                                         (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
-                    frameLocalTo = pandas.DataFrame(frameDataTo.loc[frameDataTo["Time"] >= "00:00:00", frameColumns])
-                    frameCurrent = pandas.concat([frameLocalFrom, frameLocalTo], ignore_index=True)
-        else:
-            if sliceDateFrom == sliceDateTo:
-                fileMain = csvFolder + sliceDateFrom + ".csv"
-                frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
-                frameTo = frameData.loc[(frameData["Time"] >= sliceTimeFrom) &
-                                        (frameData["Time"] <= sliceTimeTo), frameColumns]
-                frameCurrent = pandas.DataFrame(frameTo)
-            else:
-                fileFrom = csvFolder + sliceDateFrom + ".csv"
-                fileTo = csvFolder + sliceDateTo + ".csv"
-                frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
-                frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
-                frameLocalFrom = pandas.DataFrame(frameDataFrom.loc[((frameDataFrom["Time"] >= sliceTimeFrom) &
-                                                                     (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
-                frameLocalTo = pandas.DataFrame(frameDataTo.loc[((frameDataTo["Time"] >= "00:00:00") &
-                                                                 (frameDataTo["Time"] <= sliceTimeTo)), frameColumns])
-                frameFrom = frameLocalFrom.loc[(frameLocalFrom.index % 2 == 0), frameColumns]
-                frameTo = frameLocalTo.loc[(frameLocalTo.index % 2 == 0), frameColumns]
-                frameCurrent = pandas.concat([frameFrom, frameTo], ignore_index=True)
-    except Exception as excFrame:
-        PlotError(True)
-        logging.error("Data block error:", excFrame, exc_info=True)
-    finally:
-        semaphore.release()
-    figure.clear()
-    lox = matplotlib.ticker.LinearLocator(24)
-    graphTemp = figure.add_subplot(111)
-    graphTemp.xaxis.set_major_locator(lox)
-    graphTemp.set_facecolor(bgLoc)
-    graphTemp.set_title(machineName, color="yellow")
-    if frameCurrent.empty is False:
+    def ValidCheck(frame):
+        issues = []
+        frameCheck = pandas.DataFrame(columns=frameColumns)
         try:
-            graphTemp.plot(frameCurrent["Time"], frameCurrent["TemperatureCurrent"], "-w",
-                           frameCurrent["Time"], frameCurrent["TemperatureSet"], "--c")
-            graphTemp.set_ylabel("Температура, °C", color="white")
-            graphTemp.grid(alpha=0.5, linestyle="-", color="cyan", linewidth=0.3)
-            graphTemp.tick_params(labelsize=8, colors="yellow")
-            if ((baseMode == "Temperature") & (sliceActive is False)) | ((humidity is False) & (sliceActive is True)):
-                graphTemp.fill_between(x=frameCurrent["Time"], y1=frameCurrent["TemperatureCurrent"],
-                                       y2=frameCurrent["TemperatureSet"], alpha=0.2)
-            if ((baseMode == "Humidity") & (sliceActive is False)) | ((humidity is True) & (sliceActive is True)):
-                graphHum = graphTemp.twinx()
-                graphHum.set_ylabel("Влажность, %", color="red")
-                graphHum.plot(frameCurrent["Time"], frameCurrent["HumidityCurrent"], "-r",
-                              frameCurrent["Time"], frameCurrent["HumiditySet"], "--m")
-                graphHum.fill_between(x=frameCurrent["Time"], y1=frameCurrent["HumidityCurrent"],
-                                      y2=frameCurrent["HumiditySet"], alpha=0.2)
-                graphHum.grid(alpha=0.6, linestyle=":", color="red")
-                graphHum.tick_params(labelsize=8, colors="yellow")
-        except Exception as excPlot:
-            PlotError(True)
-            logging.error("Plot block error:", excPlot, exc_info=True)
+            frameCheck["Time"] = pandas.to_datetime(frame["Time"], format="%H:%M:%S")
+        except Exception as excFrame:
+            issues.append("Time is incorrect")
+        if frame.isnull().values.any():
+            issues.append("NaN values")
+        if list(frame) != frameColumns:
+            issues.append("Columns are incorrect")
+        if issues:
+            return False
         else:
-            PlotError(False)
-    figure.autofmt_xdate()
-    canvasGraph.draw()
-    canvasGraph.get_tk_widget().place(x=20, y=290)
-    if sliceActive:
-        humidity = False
-        return
+            return True
 
-    root.after(5000, Plot)
+
+    global sliceActive, baseMode, onlinePlot, humidity, csvFolder, frameCurrent, frameColumns
+    while True:
+        if onlinePlot is True:
+            semaphore.acquire()
+            try:
+                if not sliceActive:
+                    chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
+                    fileList = os.listdir(csvFolder)
+                    fileMain = os.path.join(csvFolder, fileList[-1])
+                    if (currentTime != "") & (chosenTime != ""):
+                        timeNow = datetime.strptime(currentTime, "%H:%M:%S")
+                        timeDif = datetime.strptime(chosenTime, "%H:%M:%S")
+                        if (timeNow-timeDif).days == 0:
+                            timeBegin = str(datetime.strptime(str(timeNow-timeDif), "%H:%M:%S").time())
+                            frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
+                            frameTo = pandas.DataFrame(frameData.loc[frameData["Time"] >= timeBegin, frameColumns])
+                            if ValidCheck(frameTo):
+                                frameCurrent = frameTo
+                            # nowvalues = [str(currentTime), str(temperatureCurrent), str(temperatureSet), str(humidityCurrent), str(humiditySet)]
+                            # frameNow = pandas.DataFrame([nowvalues], columns=frameColumns)
+                            # frameCurrent = pandas.concat([frameCurrent, frameNow], ignore_index=True)
+                        else:
+                            fileFrom = os.path.join(csvFolder, fileList[-2])
+                            fileTo = os.path.join(csvFolder, fileList[-1])
+                            timeFrom = ((timeNow - timeDif) + datetime.strptime("23:59:59", "%H:%M:%S")).time()
+                            frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
+                            frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
+                            frameLocalFrom = pandas.DataFrame(frameDataFrom.loc[((frameDataFrom["Time"] >= str(timeFrom)) &
+                                                                                 (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
+                            frameLocalTo = pandas.DataFrame(frameDataTo.loc[frameDataTo["Time"] >= "00:00:00", frameColumns])
+                            frameCurrent = pandas.concat([frameLocalFrom, frameLocalTo], ignore_index=True)
+                else:
+                    if sliceDateFrom == sliceDateTo:
+                        fileMain = csvFolder + sliceDateFrom + ".csv"
+                        frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
+                        frameTo = frameData.loc[(frameData["Time"] >= sliceTimeFrom) &
+                                                (frameData["Time"] <= sliceTimeTo), frameColumns]
+                        frameCurrent = pandas.DataFrame(frameTo)
+                    else:
+                        fileFrom = csvFolder + sliceDateFrom + ".csv"
+                        fileTo = csvFolder + sliceDateTo + ".csv"
+                        frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
+                        frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
+                        frameLocalFrom = pandas.DataFrame(frameDataFrom.loc[((frameDataFrom["Time"] >= sliceTimeFrom) &
+                                                                             (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
+                        frameLocalTo = pandas.DataFrame(frameDataTo.loc[((frameDataTo["Time"] >= "00:00:00") &
+                                                                         (frameDataTo["Time"] <= sliceTimeTo)), frameColumns])
+                        frameFrom = frameLocalFrom.loc[(frameLocalFrom.index % 2 == 0), frameColumns]
+                        frameTo = frameLocalTo.loc[(frameLocalTo.index % 2 == 0), frameColumns]
+                        frameCurrent = pandas.concat([frameFrom, frameTo], ignore_index=True)
+            except Exception as excFrame:
+                PlotError(True)
+                logging.error("Data block error:", excFrame, exc_info=True)
+            finally:
+                semaphore.release()
+            figure.clear()
+            lox = matplotlib.ticker.LinearLocator(24)
+            graphTemp = figure.add_subplot(111)
+            graphTemp.xaxis.set_major_locator(lox)
+            graphTemp.set_facecolor(bgLoc)
+            graphTemp.set_title(machineName, color="yellow")
+            if frameCurrent.empty is False:
+                try:
+                    graphTemp.plot(frameCurrent["Time"], frameCurrent["TemperatureCurrent"], "-w",
+                                   frameCurrent["Time"], frameCurrent["TemperatureSet"], "--c")
+                    graphTemp.set_ylabel("Температура, °C", color="white")
+                    graphTemp.grid(alpha=0.5, linestyle="-", color="cyan", linewidth=0.3)
+                    graphTemp.tick_params(labelsize=8, colors="yellow")
+                    if ((baseMode == "Temperature") & (sliceActive is False)) | ((humidity is False) & (sliceActive is True)):
+                        graphTemp.fill_between(x=frameCurrent["Time"], y1=frameCurrent["TemperatureCurrent"],
+                                               y2=frameCurrent["TemperatureSet"], alpha=0.2)
+                    if ((baseMode == "Humidity") & (sliceActive is False)) | ((humidity is True) & (sliceActive is True)):
+                        graphHum = graphTemp.twinx()
+                        graphHum.set_ylabel("Влажность, %", color="red")
+                        graphHum.plot(frameCurrent["Time"], frameCurrent["HumidityCurrent"], "-r",
+                                      frameCurrent["Time"], frameCurrent["HumiditySet"], "--m")
+                        graphHum.fill_between(x=frameCurrent["Time"], y1=frameCurrent["HumidityCurrent"],
+                                              y2=frameCurrent["HumiditySet"], alpha=0.2)
+                        graphHum.grid(alpha=0.6, linestyle=":", color="red")
+                        graphHum.tick_params(labelsize=8, colors="yellow")
+                except Exception as excPlot:
+                    PlotError(True)
+                    logging.error("Plot block error:", excPlot, exc_info=True)
+                else:
+                    PlotError(False)
+            figure.autofmt_xdate()
+            canvasGraph.draw()
+            canvasGraph.get_tk_widget().place(x=20, y=290)
+            if sliceActive:
+                humidity = False
+                onlinePlot = False
+        time.sleep(5)
 
 
 def SaveFigure():
@@ -1070,8 +1130,10 @@ acceptImage = PhotoImage(file=f"{iconsFolder}accept.png")
 declineImage = PhotoImage(file=f"{iconsFolder}decline.png")
 
 threadModbus = threading.Thread(target=ReadModbusTCP, daemon=True, name="modbus")
-threadFTP = threading.Thread(target=DataUpdate, daemon=True, name='ftp')
-semaphore = threading.Semaphore()
+threadFTP = threading.Thread(target=DataUpdate, daemon=True, name="ftp")
+threadConvert = threading.Thread(target=Convert, daemon=True, name="conversion")
+threadPlot = threading.Thread(target=Plot, daemon=True, name="plot")
+semaphore = threading.Semaphore(1)
 
 logoLabel = Label(font=("Arial", 10, "bold"), fg=fgComm, bg=bgGlob)
 armIPLabel = Label(fg=fgComm, bg=bgGlob)

@@ -26,21 +26,22 @@ import logging
 
 
 xLabelPos, xValuePos, yPos = 20, 190, 85
-localIP, panelIP, panelDate, panelTime, currentTime, filename, picname = "", "", "", "", "", "", ""
 fgComm, fgVal, bgGlob, bgLoc = "white", "yellow", "#2B0542", "#510D70"
 status = ("НЕТ СВЯЗИ", "АВАРИЯ", "РАБОТА", "ОСТАНОВ")
 mode = ("НЕТ СВЯЗИ", "НАСТРОЙКА", "ТЕРМО", "ВЛАГА")
 cycleTemp = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАГРЕВ", "ОХЛАЖДЕНИЕ")
 cycleHum = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАСЫЩЕНИЕ", "ОСУШЕНИЕ")
-statusIndex, modeIndex, cycleTempIndex, cycleHumIndex = 0, 0, 0, 0
-listIP = {}
+
 frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
-frameCurrent = pandas.DataFrame(columns=frameColumns)
+frameCurrent = frameData = frameDataFrom = frameDataTo = pandas.DataFrame(columns=frameColumns)
 ipColumns = ["ip", "name"]
 frameIP = pandas.DataFrame(columns=ipColumns)
+
 temperatureCurrent, temperatureSet = -1.1, -1.1
 humidityCurrent, humiditySet = 1, 1
 version, tmin, tmax = 0, 0, 0
+statusIndex, modeIndex, cycleTempIndex, cycleHumIndex = 0, 0, 0, 0
+
 runFolder = os.path.abspath(os.curdir)
 rootFolder = runFolder if len(runFolder) < 4 else runFolder + "\\"
 iconsFolder = getattr(sys, "_MEIPASS", os.getcwd()) + "\\icons\\"
@@ -49,21 +50,18 @@ converter = f"{rootFolder}support\\easyсonverter.exe"
 sourceFolder = f"{rootFolder}support\\data\\"
 csvFolder = f"{rootFolder}\\CSV\\"
 xlsFolder = f"{rootFolder}\\XLS\\"
-machineIP, machineName = "", ""
-sliceActive = sliceChange = showSlice = showError = showButton = False
+
+localIP, panelIP, panelDate, panelTime, currentTime, filename, picname = "", "", "", "", "", "", ""
+machineIP, machineName, lastlog = "", "", ""
 sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo = "", "", "", ""
 baseMode, baseStatus = "Temperature", "Stop"
+sliceActive = sliceChange = showSlice = showError = showButton = False
 heat = cold = idleT = wet = dry = idleH = False
-onlinePlot = False
-humidity = False
-failConnection = failDevice = False
+connection = exchange = run = draw = failConnection = failDevice = onlinePlot = humidity = historysync = False
+
 currentMachine = StringVar
-run = False
-draw = False
-connection = exchange = False
+listIP = {}
 files = []
-logging.basicConfig(filename=f"{rootFolder}sys.log", level=logging.ERROR)
-logging.error(f"New session run from {rootFolder}")
 master = None
 ftp = None
 machinesList = None
@@ -465,7 +463,7 @@ def OpenConnection():
         Runtime() if exchange is False else None
         run = True
         exchange = True
-    except TimeoutError:
+    except Exception as excConnection:
         logging.error("Open connection timeout error:Connection error")
         ConnectionErrorWindow() if failConnection is False else None
         return
@@ -492,11 +490,10 @@ def Single():
         threadConvert.start()
     except RuntimeError:
         pass
-    # Plot()
 
 
 def Runtime():
-    # History()
+    History()
     UpdateList()
 
 
@@ -585,13 +582,13 @@ def Convert():
             process = subprocess.Popen(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                        creationflags=creationflags, startupinfo=startupinfo)
             if process.returncode != 0:
-                logging.error(f"Error run converter")
+                pass
         except Exception as excProcess:
-            logging.error("Subprocess error", exc_info=True)
+            logging.error("Subprocess error:", exc_info=True)
         finally:
             semaphore.release()
 
-    global sourceFolder, csvFolder, readdata
+    global sourceFolder, csvFolder, historysync
     while True:
         if True:
             semaphore.acquire()
@@ -600,9 +597,13 @@ def Convert():
                 csvFile = f"{currentFile[:8]}.csv"
                 xlsFile = f"{currentFile[:8]}.xls"
                 csvconvert = [converter, os.path.join(sourceFolder, currentFile), os.path.join(csvFolder, csvFile)]
+                xlsconvert = [converter, os.path.join(sourceFolder, currentFile), os.path.join(xlsFolder, xlsFile)]
                 RunProcess(csvconvert)
+                if historysync:
+                    RunProcess(xlsconvert)
+                    historysync = False
             except Exception as excConverter:
-                logging.error("Conversion error", exc_info=True)
+                logging.error("Conversion error:", exc_info=True)
             finally:
                 semaphore.release()
         time.sleep(11)
@@ -610,26 +611,24 @@ def Convert():
 
 def History():
     global files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
-    try:
-        for sourceFile in files:
-            localFile = os.path.join(sourceFolder, sourceFile)
-            with open(localFile, "wb") as file:
-                ftp.retrbinary("RETR %s" % sourceFile, file.write)
-            csvFile = f"{sourceFile[:8]}.csv"
-            xlsFile = f"{sourceFile[:8]}.xls"
-            Convert(sourceFolder, sourceFile, csvFolder, csvFile, xlsFolder, xlsFile)
-    except NameError:
-        logging.error("History name error:Device error")
-        DeviceErrorWindow() if failDevice is False else None
-        return
-    except TimeoutError:
-        logging.error("History timeout error:Connection error")
-        ConnectionErrorWindow() if failConnection is False else None
-        return
-    except FileNotFoundError:
-        logging.error("History file not found:Device error")
-        DeviceErrorWindow() if failDevice is False else None
-        return
+    history = False
+    while history is False:
+        try:
+            for sourceFile in files:
+                localFile = os.path.join(sourceFolder, sourceFile)
+                with open(localFile, "wb") as file:
+                    ftp.retrbinary("RETR %s" % sourceFile, file.write)
+                csvFile = f"{sourceFile[:8]}.csv"
+                xlsFile = f"{sourceFile[:8]}.xls"
+                csvcommand = [converter, os.path.join(sourceFolder, sourceFile), os.path.join(csvFolder, csvFile)]
+                xlscommand = [converter, os.path.join(sourceFolder, sourceFile), os.path.join(xlsFolder, xlsFile)]
+                subprocess.Popen(csvcommand, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(xlscommand, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            history = True
+        except Exception as excHistory:
+            logging.error("History error:", exc_info=True)
+            ConnectionErrorWindow() if failConnection is False else None
+        time.sleep(0.1)
 
 
 def DataUpdate():
@@ -643,31 +642,27 @@ def DataUpdate():
 
     global connection, files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice, ftp, readdata
     while True:
-        time.sleep(15)
-        # if connection is True:
-        if True:
-            semaphore.acquire()
-            # readdata = True
-            try:
-                with ftputil.FTPHost(machineIP, "uploadhis", "111111") as ftphost:
-                    datadir = "/datalog/data/"
-                    if ftphost.path.exists(datadir):
-                        ftphost.chdir(datadir)
-                        remoteFile = ftphost.listdir(datadir)[-1]
-                        if ftphost.path.isfile(remoteFile) & AccessToFile(ftphost, remoteFile):
-                            localFile = os.path.join(sourceFolder, remoteFile)
-                            ftphost.download(remoteFile, localFile)
-                time.sleep(1)
-                # readdata = False
-            except TypeError:
-                ConnectionErrorWindow() if failConnection else None
-            except ConnectionResetError:
-                ConnectionErrorWindow() if failConnection else None
-            except Exception as excData:
-                logging.error("Cycle error", exc_info=True)
-                ConnectionErrorWindow() if failConnection else None
-            finally:
-                semaphore.release()
+        time.sleep(12)
+        semaphore.acquire()
+        try:
+            with ftputil.FTPHost(machineIP, "uploadhis", "111111") as ftphost:
+                datadir = "/datalog/data/"
+                if ftphost.path.exists(datadir):
+                    ftphost.chdir(datadir)
+                    remoteFile = ftphost.listdir(datadir)[-1]
+                    if ftphost.path.isfile(remoteFile) & AccessToFile(ftphost, remoteFile):
+                        localFile = os.path.join(sourceFolder, remoteFile)
+                        ftphost.download(remoteFile, localFile)
+            time.sleep(1)
+        except TypeError:
+            ConnectionErrorWindow() if failConnection else None
+        except ConnectionResetError:
+            ConnectionErrorWindow() if failConnection else None
+        except Exception as excData:
+            logging.error("Cycle error", exc_info=True)
+            ConnectionErrorWindow() if failConnection else None
+        finally:
+            semaphore.release()
 
 
 def UserControl():
@@ -908,28 +903,40 @@ def Plot():
                     correct = False
         return correct
 
-    global sliceActive, baseMode, onlinePlot, humidity, csvFolder, frameData, frameCurrent, frameColumns, draw
+    global sliceActive, baseMode, onlinePlot, humidity, csvFolder, frameData, frameCurrent, frameColumns, draw, \
+        timeNow, timeDif, fileList, fileMain, frameDataFrom, frameDataTo
     while True:
         if onlinePlot is True:
             semaphore.acquire()
             try:
                 if not sliceActive:
                     chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
-                    fileList = sorted(os.listdir(csvFolder))
-                    fileMain = os.path.join(csvFolder, fileList[-1])
+                    try:
+                        fileList = sorted(os.listdir(csvFolder))
+                        fileMain = os.path.join(csvFolder, fileList[-1])
+                    except Exception as excFile:
+                        logging.error("File not found:", exc_info=True)
+                        PlotError(True)
+                        semaphore.release()
                     if currentTime and chosenTime:
-                        timeNow = datetime.strptime(currentTime, "%H:%M:%S")
-                        timeDif = datetime.strptime(chosenTime, "%H:%M:%S")
+                        try:
+                            timeNow = datetime.strptime(currentTime, "%H:%M:%S")
+                            timeDif = datetime.strptime(chosenTime, "%H:%M:%S")
+                        except Exception as excTime:
+                            logging.error("Time read error:", exc_info=True)
+                            PlotError(True)
+                            semaphore.release()
                         if (timeNow-timeDif).days == 0:
                             timeBegin = str(datetime.strptime(str(timeNow-timeDif), "%H:%M:%S").time())
                             try:
                                 frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
-                            except Exception as excRead:
+                            except Exception as ExcRead:
                                 logging.error("Error reading CSV file:", exc_info=True)
+                                PlotError(True)
+                                semaphore.release()
                             frameTo = pandas.DataFrame(frameData.loc[frameData["Time"] >= timeBegin, frameColumns])
                             if ValidCheck(frameTo):
                                 frameCurrent = frameTo
-
                         else:
                             fileFrom = os.path.join(csvFolder, fileList[-2])
                             fileTo = os.path.join(csvFolder, fileList[-1])
@@ -937,6 +944,11 @@ def Plot():
                             try:
                                 frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
                                 frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
+                            except Exception as ExcRead:
+                                logging.error("Bad data", exc_info=True)
+                                PlotError(True)
+                                semaphore.release()
+                            try:
                                 frameLocalFrom = pandas.DataFrame(frameDataFrom.loc[((frameDataFrom["Time"] >= str(timeFrom)) &
                                                                                      (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
                                 frameLocalTo = pandas.DataFrame(frameDataTo.loc[frameDataTo["Time"] >= "00:00:00", frameColumns])
@@ -944,6 +956,7 @@ def Plot():
                                     frameCurrent = pandas.concat([frameLocalFrom, frameLocalTo], ignore_index=True)
                             except Exception as excRead:
                                 logging.error("Error reading CSV file:", exc_info=True)
+                                semaphore.release()
                     else:
                         PlotError(True)
                 else:
@@ -967,7 +980,7 @@ def Plot():
                         frameCurrent = pandas.concat([frameFrom, frameTo], ignore_index=True)
             except Exception as excFrame:
                 PlotError(True)
-                logging.error("Data block error:", excFrame, exc_info=True)
+                logging.error("Data block error:", exc_info=True)
             finally:
                 semaphore.release()
             figure.clear()
@@ -976,7 +989,8 @@ def Plot():
             graphTemp.xaxis.set_major_locator(lox)
             graphTemp.set_facecolor(bgLoc)
             graphTemp.set_title(machineName, color="yellow")
-            if frameCurrent.empty is False:
+            if (frameCurrent.empty is False) & ValidCheck(frameCurrent):
+                semaphore.acquire()
                 try:
                     graphTemp.plot(frameCurrent["Time"], frameCurrent["TemperatureCurrent"], "-w",
                                    frameCurrent["Time"], frameCurrent["TemperatureSet"], "--c")
@@ -1000,6 +1014,8 @@ def Plot():
                     logging.error("Plot block error:", exc_info=True)
                 else:
                     PlotError(False)
+                finally:
+                    semaphore.release()
             else:
                 PlotError(True)
             figure.autofmt_xdate()
@@ -1028,6 +1044,8 @@ def OpenFigure():
 
 
 def OpenHistory():
+    global historysync
+    historysync = True
     if os.path.exists(xlsFolder):
         os.system(f"explorer.exe {xlsFolder}")
 
@@ -1111,6 +1129,10 @@ def DeviceErrorWindow():
     ttk.Button(master=screenError, style="TButton", text="Подождать", command=CloseWindow).place(x=20, y=60, width=120)
     ttk.Button(master=screenError, style="TButton", text="Завершить", command=sys.exit).place(x=160, y=60, width=120)
 
+
+logfile = os.path.join(rootFolder, "sys.log")
+os.remove(logfile) if os.path.isfile(logfile) else None
+logging.basicConfig(filename=logfile, level=logging.ERROR)
 
 root = Tk()
 root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.0a")

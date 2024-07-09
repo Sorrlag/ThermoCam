@@ -4,7 +4,6 @@ import os
 import ftplib
 import ftputil
 import sys
-import pexpect
 import time
 import threading
 import re
@@ -26,7 +25,7 @@ import logging
 
 
 xLabelPos, xValuePos, yPos = 20, 190, 85
-fgComm, fgVal, bgGlob, bgLoc = "white", "yellow", "#2B0542", "#510D70"
+fgLab, fgVal, bgGlob, bgLoc = "white", "yellow", "#2B0542", "#510D70"
 status = ("НЕТ СВЯЗИ", "АВАРИЯ", "РАБОТА", "ОСТАНОВ")
 mode = ("НЕТ СВЯЗИ", "НАСТРОЙКА", "ТЕРМО", "ВЛАГА")
 cycleTemp = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАГРЕВ", "ОХЛАЖДЕНИЕ")
@@ -181,8 +180,8 @@ def GlobalStatus():
         humCurValue["fg"] = humSetValue["fg"] = humCycleValue["fg"] = "dim gray"
     if modeIndex == 3:
         baseMode = "Humidity"
-        humCurLabel["fg"] = humSetLabel["fg"] = humCycleLabel["fg"] = fgComm
-        humCurValue["fg"] = humSetValue["fg"] = humCycleValue["fg"] = fgComm
+        humCurLabel["fg"] = humSetLabel["fg"] = humCycleLabel["fg"] = fgLab
+        humCurValue["fg"] = humSetValue["fg"] = humCycleValue["fg"] = fgVal
     if (baseStatus == "Run") & (modeIndex >= 2):
         if temperatureCurrent <= (temperatureSet - 2):
             cycleTempIndex = 2
@@ -977,7 +976,7 @@ def Plot():
                                                                              (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
                         frameLocalTo = pandas.DataFrame(frameDataTo.loc[((frameDataTo["Time"] >= "00:00:00") &
                                                                          (frameDataTo["Time"] <= sliceTimeTo)), frameColumns])
-                        frameFrom = frameLocalFrom.loc[(frameLocalFrom.index % 2 == 0), frameColumns]
+                        frameFrom = frameLocalFrom.loc[(frameLocalFrom.index % 10 == 0), frameColumns]
                         frameTo = frameLocalTo.loc[(frameLocalTo.index % 2 == 0), frameColumns]
                         frameCurrent = pandas.concat([frameFrom, frameTo], ignore_index=True)
             except Exception as excFrame:
@@ -1148,6 +1147,8 @@ root["bg"] = bgGlob
 root.resizable(False, False)
 icon = PhotoImage(file=f"{iconsFolder}icon.png")
 root.iconphoto(False, icon)
+root.option_add("*Font", "Helvetica 8")
+ttk.Style().configure(style=".", font="Helvetica 8")
 
 canvas = Canvas(width=998, height=698, bg=bgGlob, highlightthickness=1, highlightbackground=bgGlob)
 canvas.place(x=0, y=80)
@@ -1176,35 +1177,34 @@ threadConvert = threading.Thread(target=Convert, daemon=True, name="conversion")
 threadPlot = threading.Thread(target=Plot, daemon=True, name="plot")
 semaphore = threading.Semaphore(1)
 
-logoLabel = Label(font=("Arial", 10, "bold"), fg=fgComm, bg=bgGlob)
-armIPLabel = Label(fg=fgComm, bg=bgGlob)
-panelIPLabel = Label(fg=fgComm, bg=bgGlob)
-panelDateLabel = Label(fg=fgComm, bg=bgGlob, anchor="e")
-panelTimeLabel = Label(fg=fgComm, bg=bgGlob, anchor="e")
-statusLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+logoLabel = Label(font=("Arial", 10, "bold"), fg=fgLab, bg=bgGlob)
+armIPLabel = Label(fg=fgLab, bg=bgGlob)
+panelIPLabel = Label(fg=fgLab, bg=bgGlob)
+panelDateLabel = Label(fg=fgLab, bg=bgGlob, anchor="e")
+panelTimeLabel = Label(fg=fgLab, bg=bgGlob, anchor="e")
+statusLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 statusValue = Label(fg=fgVal, bg=bgLoc)
-modeLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+modeLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 modeValue = Label(fg=fgVal, bg=bgLoc)
-tempCurLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+tempCurLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 tempCurValue = Label(fg=fgVal, bg=bgLoc)
-tempSetLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+tempSetLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 tempSetValue = Label(fg=fgVal, bg=bgLoc)
-tempCycleLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+tempCycleLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 tempCycleValue = Label(fg=fgVal, bg=bgLoc)
-humCurLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+humCurLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 humCurValue = Label(fg=fgVal, bg=bgLoc)
-humSetLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+humSetLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 humSetValue = Label(fg=fgVal, bg=bgLoc)
-humCycleLabel = Label(anchor="e", fg=fgComm, bg=bgLoc)
+humCycleLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 humCycleValue = Label(fg=fgVal, bg=bgLoc)
-labelPeriods = Label(anchor="w", fg=fgComm, bg=bgLoc)
+labelPeriods = Label(anchor="w", fg=fgLab, bg=bgLoc)
 
 figure = Figure(figsize=(9.5, 4.7), dpi=100, facecolor=bgLoc)
 canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
 
 canvasError = tkinter.Canvas(master=root, bg="red", width=100, height=100)
-
-ttk.Style().configure("TButton", font="helvetica 8", background=bgGlob, relief="sunken", border=0, foreground="blue")
+ttk.Style().configure("TButton", font="Helvetica 8", background=bgGlob, relief="sunken", border=0, foreground="blue")
 buttonSaveFig = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
 buttonOpenFig = ttk.Button(command=OpenFigure, style="TButton", text="Открыть график")
 buttonOpenHistory = ttk.Button(command=OpenHistory, style="TButton", text="Открыть папку с суточными архивами")

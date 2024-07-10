@@ -31,8 +31,9 @@ mode = ("НЕТ СВЯЗИ", "НАСТРОЙКА", "ТЕРМО", "ВЛАГА")
 cycleTemp = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАГРЕВ", "ОХЛАЖДЕНИЕ")
 cycleHum = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАСЫЩЕНИЕ", "ОСУШЕНИЕ")
 
-frameColumns = ["Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
+frameColumns = ["Date", "Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
 frameCurrent = frameData = frameDataFrom = frameDataTo = pandas.DataFrame(columns=frameColumns)
+combColumns = ["Datetime", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
 ipColumns = ["ip", "name"]
 frameIP = pandas.DataFrame(columns=ipColumns)
 
@@ -534,7 +535,7 @@ def ReadModbusTCP():
                 connection = panelIP == machineIP
                 panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
                 panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
-                currentDate = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}"
+                currentDate = f"{getSys[4]:02}/{getSys[5]:02}/{getSys[6]}"
                 currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
                 filename = f"{getSys[6]:04}{getSys[5]:02}{getSys[4]:02}"
                 picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
@@ -735,75 +736,70 @@ def ShowSlice():
         # Plot()
         HideSlice()
 
-    def TimeValidControl():
-        dateInitialSet = datetime.strptime(f"{dayInitial.get()}/{monthInitial.get()}/{yearNow}", "%d/%m/%Y")
-        dateFinalSet = datetime.strptime(f"{dayFinal.get()}/{monthFinal.get()}/{yearNow}", "%d/%m/%Y")
-        if dateInitialSet == dateFinalSet:
-            if dateInitialSet == datetime.strptime(panelDate, "%d / %m / %Y"):
-                if hourFinal.get() > panelTime[0:2]:
-                    hourFinal.set(value=panelTime[0:2])
-                if (hourFinal.get() == panelTime[0:2]) & (minutesFinal.get() > panelTime[5:7]):
-                    minutesFinal.set(value=panelTime[5:7])
-            else:
-                if (hourFinal.get() == "00") & (minutesFinal.get() == "00"):
-                    minutesFinal.set(value="01")
-                if hourInitial.get() > hourFinal.get():
-                    hourInitial.set(value=str(hourFinal.get()))
-                if (hourInitial.get() == hourFinal.get()) & (minutesInitial.get() >= minutesFinal.get()):
-                    if minutesFinal.get() == "00":
-                        hourInitial.set(value=f"{(int(hourFinal.get())-1):02.0f}")
-                        minutesInitial.set(value="59")
-                    else:
-                        minutesInitial.set(value=f"{(int(minutesFinal.get())-1):02.0f}")
+    def DatetimeValidControl():
+        global currentDate, dateNow, dateInitial, dateFinal, currentTime, timeNow, timeInitial, timeFinal
+        dateNow = datetime.strptime(currentDate, "%d/%m/%Y")
 
-    def DateValidControl(direction):
-        global dateInitial
         try:
-            dateInitial = datetime.strptime(f"{dayInitial.get()}/{monthInitial.get()}/{yearNow}",
-                                            "%d/%m/%Y")
+            dateInitial = datetime.strptime(f"{dayInitial.get()}/{monthInitial.get()}/{yearNow}", "%d/%m/%Y")
         except ValueError:
-            if direction == "down":
-                dateInitial = datetime.strptime(f"{int(dayInitial.get())+1}/{monthInitial.get()}/{yearNow}",
+            if int(dayInitial.get()) == 0:
+                dateInitial = datetime.strptime(f"{int(dayInitial.get()) + 1}/{monthInitial.get()}/{yearNow}",
                                                 "%d/%m/%Y")
                 dateInitial = dateInitial - timedelta(days=1)
-            if direction == "up":
-                dateInitial = datetime.strptime(f"{int(dayInitial.get())-1}/{monthInitial.get()}/{yearNow}",
+            else:
+                dateInitial = datetime.strptime(f"{int(dayInitial.get()) - 1}/{monthInitial.get()}/{yearNow}",
                                                 "%d/%m/%Y")
                 dateInitial = dateInitial + timedelta(days=1)
+
+        try:
+            dateFinal = datetime.strptime(f"{dayFinal.get()}/{monthFinal.get()}/{yearNow}", "%d/%m/%Y")
+        except ValueError:
+            if int(dayFinal.get()) == 0:
+                dateFinal = datetime.strptime(f"{int(dayFinal.get()) + 1}/{monthFinal.get()}/{yearNow}",
+                                                "%d/%m/%Y")
+                dateFinal = dateFinal - timedelta(days=1)
+            else:
+                dateFinal = datetime.strptime(f"{int(dayFinal.get()) - 1}/{monthFinal.get()}/{yearNow}",
+                                                "%d/%m/%Y")
+                dateFinal = dateFinal + timedelta(days=1)
+
+        timeNow = datetime.strptime(currentTime, "%H:%M:%S")
+        timeInitial = datetime.strptime(f"{hourInitial.get()}:{minutesInitial.get()}:00", "%H:%M:%S")
+        timeFinal = datetime.strptime(f"{hourFinal.get()}:{minutesFinal.get()}:00", "%H:%M:%S")
+
+        if dateInitial > dateNow:
+            dateInitial = dateNow
+        if dateFinal > dateNow:
+            dateFinal = dateNow
+        if dateFinal < dateInitial:
+            dateFinal = dateInitial
+        if dateFinal == dateNow:
+            if timeFinal > timeNow:
+                timeFinal = timeNow
+        if dateInitial == dateFinal:
+            if timeInitial >= timeFinal:
+                timeInitial = timeFinal - timedelta(minutes=1)
+
         dayInitial.set(value=datetime.strftime(dateInitial, "%d/%m/%Y")[0:2])
         monthInitial.set(value=datetime.strftime(dateInitial, "%d/%m/%Y")[3:5])
-        hourInitial.set(value="00")
-        minutesInitial.set(value="00")
-        dateFinal = datetime.strptime(f"{dayFinal.get()}/{monthFinal.get()}/{yearNow}", "%d/%m/%Y")
-        if (dateFinal - dateInitial) > timedelta(days=1):
-            dayFinal.set(value=datetime.strftime(dateInitial + timedelta(days=1), "%d/%m/%Y")[0:2])
-            monthFinal.set(value=datetime.strftime(dateInitial + timedelta(days=1), "%d/%m/%Y")[3:5])
-            hourFinal.set(value="23")
-            minutesFinal.set(value="59")
-        if dateFinal < dateInitial:
-            dayFinal.set(value=datetime.strftime(dateInitial, "%d/%m/%Y")[0:2])
-            monthFinal.set(value=datetime.strftime(dateInitial, "%d/%m/%Y")[3:5])
-            hourFinal.set(value="23")
-            minutesFinal.set(value="59")
-        if dateInitial == datetime.strptime(panelDate, "%d / %m / %Y"):
-            dayInitial.set(value=panelDate[0:2])
-            monthInitial.set(value=panelDate[5:7])
-            dayFinal.set(value=panelDate[0:2])
-            monthFinal.set(value=panelDate[5:7])
-            hourFinal.set(value=panelTime[0:2])
-            minutesFinal.set(value=panelTime[5:7])
+        dayFinal.set(value=datetime.strftime(dateFinal, "%d/%m/%Y")[0:2])
+        monthFinal.set(value=datetime.strftime(dateFinal, "%d/%m/%Y")[3:5])
+        hourInitial.set(value=datetime.strftime(timeInitial, "%H:%M:%S")[0:2])
+        minutesInitial.set(value=datetime.strftime(timeInitial, "%H:%M:%S")[3:5])
+        hourFinal.set(value=datetime.strftime(timeFinal, "%H:%M:%S")[0:2])
+        minutesFinal.set(value=datetime.strftime(timeFinal, "%H:%M:%S")[3:5])
 
-    global sliceFrame, version
-    dayValidControl = root.register(DateValidControl)
-    dayInitial = StringVar(value=panelDate[0:2])
-    dayFinal = StringVar(value=panelDate[0:2])
-    monthInitial = StringVar(value=panelDate[5:7])
-    monthFinal = StringVar(value=panelDate[5:7])
-    yearNow = StringVar(value=panelDate[10:14]).get()
+    global sliceFrame, version, currentDate, currentTime
+    dayInitial = StringVar(value=currentDate[0:2])
+    dayFinal = StringVar(value=currentDate[0:2])
+    monthInitial = StringVar(value=currentDate[3:5])
+    monthFinal = StringVar(value=currentDate[3:5])
+    yearNow = StringVar(value=currentDate[6:10]).get()
     hourInitial = StringVar(value="00")
     minutesInitial = StringVar(value="00")
-    hourFinal = StringVar(value=panelTime[0:2])
-    minutesFinal = StringVar(value=panelTime[5:7])
+    hourFinal = StringVar(value=currentTime[0:2])
+    minutesFinal = StringVar(value=currentTime[3:5])
 
     sliceFrame = tkinter.Frame(master=root, borderwidth=1, width=300, height=140, bg=bgLoc)
     sliceFrame.place(x=670, y=120)
@@ -816,7 +812,7 @@ def ShowSlice():
     tkinter.Label(master=sliceFrame, text="Начало выборки", anchor="w", bg=bgLoc, fg="white").place(x=0, y=10, height=20)
     tkinter.Label(master=sliceFrame, text="Дата:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=0, width=50, height=20)
     dayFrom = tkinter.Spinbox(master=sliceFrame, from_=0, to=32, state="readonly", format="%02.0f",
-                              textvariable=dayInitial, command=(dayValidControl, "%d"),
+                              textvariable=dayInitial, command=DatetimeValidControl,
                               buttonbackground=bgLoc, foreground=bgLoc)
     dayFrom.place(x=180, y=0, width=30, height=20)
     tkinter.Label(master=sliceFrame, text=".", bg=bgLoc, fg="white").place(x=215, y=0, width=5, height=20)
@@ -826,12 +822,12 @@ def ShowSlice():
     tkinter.Label(master=sliceFrame, text=f" .  {yearNow}", anchor="w", bg=bgLoc, fg="white").place(x=255, y=0, width=40, height=20)
     tkinter.Label(master=sliceFrame, text="Время:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=25, width=50, height=20)
     hourFrom = tkinter.Spinbox(master=sliceFrame, from_=0, to=23, state="readonly", format="%02.0f",
-                               textvariable=hourInitial, command=TimeValidControl,
+                               textvariable=hourInitial, command=DatetimeValidControl,
                                buttonbackground=bgLoc, foreground=bgLoc)
     hourFrom.place(x=180, y=25, width=30, height=20)
     tkinter.Label(master=sliceFrame, text=":", bg=bgLoc, fg="white").place(x=215, y=25, width=5, height=20)
-    minutesFrom = tkinter.Spinbox(master=sliceFrame, from_=0, to=55, state="readonly", format="%02.0f",
-                                  textvariable=minutesInitial, command=TimeValidControl,
+    minutesFrom = tkinter.Spinbox(master=sliceFrame, from_=0, to=59, state="readonly", format="%02.0f",
+                                  textvariable=minutesInitial, command=DatetimeValidControl,
                                   buttonbackground=bgLoc, foreground=bgLoc)
     minutesFrom.place(x=225, y=25, width=30, height=20)
     tkinter.Label(master=sliceFrame, text=" :  00", anchor="w", bg=bgLoc, fg="white").place(x=255, y=25, width=40, height=20)
@@ -839,8 +835,8 @@ def ShowSlice():
     tkinter.Label(master=sliceFrame, text="Конец выборки", anchor="w", bg=bgLoc, fg="white").place(x=0, y=65, height=20)
     tkinter.Label(master=sliceFrame, text="Дата:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=55, width=50, height=20)
     dayTo = tkinter.Spinbox(master=sliceFrame, from_=0, to=32, state="readonly", format="%02.0f",
-                            textvariable=dayFinal, command=(dayValidControl, "%d"),
-                            buttonbackground="dim gray", foreground=bgLoc)
+                            textvariable=dayFinal, command=DatetimeValidControl,
+                            buttonbackground=bgLoc, foreground=bgLoc)
     dayTo.place(x=180, y=55, width=30, height=20)
     tkinter.Label(master=sliceFrame, text=".", bg=bgLoc, fg="white").place(x=215, y=55, width=5, height=20)
     monthTo = tkinter.Spinbox(master=sliceFrame, from_=1, to=12, state="disabled", format="%02.0f",
@@ -849,12 +845,12 @@ def ShowSlice():
     tkinter.Label(master=sliceFrame, text=f" .  {yearNow}", anchor="w", bg=bgLoc, fg="white").place(x=255, y=55, width=40, height=20)
     tkinter.Label(master=sliceFrame, text="Время:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=80, width=50, height=20)
     hourTo = tkinter.Spinbox(master=sliceFrame, from_=0, to=23, state="readonly", format="%02.0f",
-                             textvariable=hourFinal, command=TimeValidControl,
+                             textvariable=hourFinal, command=DatetimeValidControl,
                              buttonbackground=bgLoc, foreground=bgLoc)
     hourTo.place(x=180, y=80, width=30, height=20)
     tkinter.Label(master=sliceFrame, text=":", bg=bgLoc, fg="white").place(x=215, y=80, width=5, height=20)
     minutesTo = tkinter.Spinbox(master=sliceFrame, from_=0, to=59, state="readonly", format="%02.0f",
-                                textvariable=minutesFinal, command=TimeValidControl,
+                                textvariable=minutesFinal, command=DatetimeValidControl,
                                 buttonbackground=bgLoc, foreground=bgLoc, buttonuprelief="sunken")
     minutesTo.place(x=225, y=80, width=30, height=20)
     tkinter.Label(master=sliceFrame, text=" :  00", anchor="w", bg=bgLoc, fg="white").place(x=255, y=80, width=40, height=20)
@@ -895,7 +891,7 @@ def Plot():
         if list(frame) != frameColumns:
             correct = False
         for column in frame.columns:
-            if column != "Time":
+            if (column != "Time") & (column != "Date"):
                 if pandas.api.types.is_numeric_dtype(frame[column]) is False:
                     correct = False
         return correct
@@ -928,7 +924,7 @@ def Plot():
                                 if (timeNow-timeDif).days == 0:
                                     timeBegin = str(datetime.strptime(str(timeNow-timeDif), "%H:%M:%S").time())
                                     try:
-                                        frameData = pandas.read_csv(fileMain, sep=",", header=0, usecols=[1, 2, 3, 4, 5])
+                                        frameData = pandas.read_csv(fileMain, sep=",", header=0)
                                     except Exception as ExcRead:
                                         logging.error("Error reading CSV file:", exc_info=True)
                                         PlotError(True)
@@ -986,34 +982,39 @@ def Plot():
                 semaphore.release()
             try:
                 figure.clear()
-                lox = matplotlib.ticker.LinearLocator(24)
+                locX = matplotlib.ticker.LinearLocator(18)
+                formX = matplotlib.dates.DateFormatter("%d.%m\n%H:%M:%S")
                 graphTemp = figure.add_subplot(111)
-                graphTemp.xaxis.set_major_locator(lox)
+                graphTemp.xaxis.set_major_locator(locX)
+                graphTemp.xaxis.set_major_formatter(formX)
                 graphTemp.set_facecolor(bgLoc)
                 graphTemp.set_title(machineName, color="yellow")
             except Exception as excPlot:
                 logging.error("Subplot error")
             if (frameCurrent.empty is False) & ValidCheck(frameCurrent):
                 semaphore.acquire()
+                frameCurrent["Datetime"] = pandas.to_datetime(frameCurrent["Date"] + " " + frameCurrent["Time"],
+                                                              dayfirst=True)
+                frameCurrent = pandas.DataFrame(frameCurrent[combColumns])
                 try:
-                    graphTemp.plot(frameCurrent["Time"], frameCurrent["TemperatureCurrent"], "-w",
-                                   frameCurrent["Time"], frameCurrent["TemperatureSet"], "--c")
+                    graphTemp.plot(frameCurrent["Datetime"], frameCurrent["TemperatureCurrent"], "-w",
+                                   frameCurrent["Datetime"], frameCurrent["TemperatureSet"], "--c")
                     graphTemp.set_ylabel("Температура, °C", color="white")
                     graphTemp.grid(alpha=0.5, linestyle="-", color="cyan", linewidth=0.3)
                     graphTemp.tick_params(labelsize=8, colors="yellow")
                     if ((baseMode == "Temperature") & (sliceActive is False)) | ((humidity is False) & (sliceActive is True)):
-                        graphTemp.fill_between(x=frameCurrent["Time"], y1=frameCurrent["TemperatureCurrent"],
+                        graphTemp.fill_between(x=frameCurrent["Datetime"], y1=frameCurrent["TemperatureCurrent"],
                                                y2=frameCurrent["TemperatureSet"], alpha=0.2)
                     if ((baseMode == "Humidity") & (sliceActive is False)) | ((humidity is True) & (sliceActive is True)):
                         graphHum = graphTemp.twinx()
                         graphHum.set_ylabel("Влажность, %", color="red")
-                        graphHum.plot(frameCurrent["Time"], frameCurrent["HumidityCurrent"], "-r",
-                                      frameCurrent["Time"], frameCurrent["HumiditySet"], "--m")
-                        graphHum.fill_between(x=frameCurrent["Time"], y1=frameCurrent["HumidityCurrent"],
+                        graphHum.plot(frameCurrent["Datetime"], frameCurrent["HumidityCurrent"], "-r",
+                                      frameCurrent["Datetime"], frameCurrent["HumiditySet"], "--m")
+                        graphHum.fill_between(x=frameCurrent["Datetime"], y1=frameCurrent["HumidityCurrent"],
                                               y2=frameCurrent["HumiditySet"], alpha=0.2)
                         graphHum.grid(alpha=0.6, linestyle=":", color="red")
                         graphHum.tick_params(labelsize=8, colors="yellow")
-                    figure.autofmt_xdate()
+                    figure.autofmt_xdate(rotation=45)
                     canvasGraph.draw()
                 except Exception as excPlot:
                     PlotError(True)

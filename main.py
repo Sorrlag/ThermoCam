@@ -667,7 +667,7 @@ def UserControl():
 
     global graphLabels, graphPeriods, graphDefault, currentMachine, listIP, machinesList, machineIP, machineName
     graphLabels = ["5 минут", "15 минут", "30 минут", "1 час", "2 часа", "4 часа", "<Настроить>"]
-    graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:01:00"]
+    graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:05:00"]
     graphDefault = StringVar(value=graphLabels[0])
     graphPeriod = ttk.Combobox(values=graphLabels, textvariable=graphDefault, width=21, state="readonly",
                                background=bgLoc, foreground=bgLoc)
@@ -965,16 +965,25 @@ def Plot():
                         frameCurrent = pandas.DataFrame(frameTo)
                     else:
                         fileFrom = csvFolder + sliceDateFrom + ".csv"
-                        fileTo = csvFolder + sliceDateTo + ".csv"
                         frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
-                        frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
                         frameLocalFrom = pandas.DataFrame(frameDataFrom.loc[((frameDataFrom["Time"] >= sliceTimeFrom) &
                                                                              (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
-                        frameLocalTo = pandas.DataFrame(frameDataTo.loc[((frameDataTo["Time"] >= "00:00:00") &
-                                                                         (frameDataTo["Time"] <= sliceTimeTo)), frameColumns])
                         frameFrom = frameLocalFrom.loc[(frameLocalFrom.index % 10 == 0), frameColumns]
-                        frameTo = frameLocalTo.loc[(frameLocalTo.index % 2 == 0), frameColumns]
-                        frameCurrent = pandas.concat([frameFrom, frameTo], ignore_index=True)
+                        frameCurrent = pandas.DataFrame(frameFrom)
+
+                        dateFrom = datetime.strptime(sliceDateFrom, "%Y%m%d")
+                        dateTo = datetime.strptime(sliceDateTo, "%Y%m%d")
+                        for i in range(1, (dateTo - dateFrom).days + 1):
+                            sliceDateNext = datetime.strftime(dateFrom + timedelta(days=i), "%Y%m%d")
+                            fileTo = csvFolder + sliceDateNext + ".csv"
+                            frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
+                            if sliceDateNext == sliceDateTo:
+                                frameLocalTo = pandas.DataFrame(frameDataTo.loc[((frameDataTo["Time"] >= "00:00:00") &
+                                                                                 (frameDataTo["Time"] <= sliceTimeTo)), frameColumns])
+                            else:
+                                frameLocalTo = pandas.DataFrame(frameDataTo)
+                            frameTo = frameLocalTo.loc[(frameLocalTo.index % 10 == 0), frameColumns]
+                            frameCurrent = pandas.concat([frameCurrent, frameTo], ignore_index=True)
             except Exception as excFrame:
                 PlotError(True)
                 logging.error("Data block error:", exc_info=True)

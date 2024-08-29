@@ -579,7 +579,7 @@ def Convert():
         startupinfo.wShowWindow = subprocess.SW_HIDE
         creationflags = subprocess.CREATE_NO_WINDOW
         try:
-            process = subprocess.Popen(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            process = subprocess.Popen(command, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                        creationflags=creationflags, startupinfo=startupinfo)
             process.wait()
             if process.returncode != 0:
@@ -970,7 +970,6 @@ def Plot():
                                                                              (frameDataFrom["Time"] <= "23:59:59")), frameColumns])
                         frameFrom = frameLocalFrom.loc[(frameLocalFrom.index % 10 == 0), frameColumns]
                         frameCurrent = pandas.DataFrame(frameFrom)
-
                         dateFrom = datetime.strptime(sliceDateFrom, "%Y%m%d")
                         dateTo = datetime.strptime(sliceDateTo, "%Y%m%d")
                         for i in range(1, (dateTo - dateFrom).days + 1):

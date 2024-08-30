@@ -39,6 +39,7 @@ frameIP = pandas.DataFrame(columns=ipColumns)
 
 temperatureCurrent, temperatureSet = -1.1, -1.1
 humidityCurrent, humiditySet = 1, 1
+temperatureNew, humidityNew, statusNew = 0, 0, 0
 version, tmin, tmax = 0, 0, 0
 statusIndex, modeIndex, cycleTempIndex, cycleHumIndex = 0, 0, 0, 0
 
@@ -59,6 +60,7 @@ sliceActive = sliceChange = showSlice = showError = showButton = False
 heat = cold = idleT = wet = dry = idleH = False
 connection = exchange = run = draw = failConnection = failDevice = onlinePlot = humidity = historysync = False
 baseData = transferComplete = convertComplete = False
+temperatureChange = humidityChange = statusChange = False
 
 currentMachine = StringVar
 listIP = {}
@@ -522,10 +524,11 @@ def UpdateList():
     onlinePlot = True
 
 
-def ReadModbusTCP():
+def ModbusTCP():
     global panelIP, panelDate, currentDate, currentDateDot, panelTime, currentTime, filename, picname, \
         failConnection, failDevice, machineIP, connection, exchange, temperatureCurrent, temperatureSet, \
-        humidityCurrent, humiditySet, modeIndex, statusIndex, version, tmin, tmax, master
+        humidityCurrent, humiditySet, modeIndex, statusIndex, version, tmin, tmax, master, \
+        temperatureChange, humidityChange, statusChange, temperatureNew, humidityNew, statusNew
     while True:
         if exchange:
             try:
@@ -561,20 +564,31 @@ def ReadModbusTCP():
                 version = int(getVersion[0])
                 tmin = int(getTmin[0]) - 2**16 if getTmin[0] > 2**15 else int(getTmin[0])
                 tmax = int(getTmax[0]) - 2**16 if getTmax[0] > 2**15 else int(getTmax[0])
+
+                if temperatureChange:
+                    record = 3
+                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10120, output_value=temperatureNew)
+                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10119, output_value=record)
+                    temperatureChange = False
+
+                if humidityChange:
+                    record = 5
+                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10121, output_value=humidityNew)
+                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10119, output_value=record)
+                    humidityChange = False
+
+                if statusChange:
+                    record = 9
+                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10122, output_value=statusNew)
+                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10119, output_value=record)
+                    statusChange = False
+
             except TimeoutError:
                 ConnectionErrorWindow() if failConnection else None
             except Exception as excModbus:
                 logging.error("Modbus error:", excModbus, exc_info=True)
                 ConnectionErrorWindow() if failConnection else None
         time.sleep(1)
-
-
-def WriteModbusTCP():
-    global statusIndex
-    if statusIndex == 2:
-        master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10119, 1, output_value=0)
-    if statusIndex == 3:
-        master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10119, 1, output_value=1)
 
 
 def History():
@@ -1091,6 +1105,70 @@ def OpenHistory():
         os.system(f"explorer.exe {xlsFolder}")
 
 
+def ChangeTemperature():
+
+    def Accept():
+        global temperatureNew, temperatureChange
+        try:
+            value = int(setTemp.get())
+            if (value >= tmin) & (value <= tmax):
+                temperatureNew = value
+                temperatureChange = True
+                frameTemp.destroy()
+        except ValueError:
+            pass
+
+    def Decline():
+        frameTemp.destroy()
+
+    frameTemp = tkinter.Frame(master=root, borderwidth=1, width=240, height=25, bg=bgLoc)
+    frameTemp.place(x=360, y=204)
+    setTemp = InputBox(container=frameTemp, placeholder=f"Уставка от {tmin} до {tmax} °C", placeholder_color="dim gray",
+                       input_type="number", justify="center")
+    setTemp.place(x=30, y=1, width=180, height=22)
+    ttk.Button(master=frameTemp, style="TButton", image=acceptImage, compound=TOP, command=Accept)\
+        .place(x=0, y=0, width=24, height=24)
+    ttk.Button(master=frameTemp, style="TButton", image=declineImage, compound=TOP, command=Decline)\
+        .place(x=216, y=0, width=24, height=24)
+
+
+def ChangeHumidity():
+
+    def Accept():
+        global humidityNew, humidityChange
+        try:
+            value = int(setHum.get())
+            if (value >= 20) & (value <= 98):
+                humidityNew = value
+                humidityChange = True
+                frameHum.destroy()
+        except ValueError:
+            pass
+
+    def Decline():
+        frameHum.destroy()
+
+    frameHum = tkinter.Frame(master=root, borderwidth=1, width=240, height=25, bg=bgLoc)
+    frameHum.place(x=360, y=229)
+    setHum = InputBox(container=frameHum, placeholder="Уставка от 20 до 98 %", placeholder_color="dim gray",
+                      input_type="number", justify="center")
+    setHum.place(x=30, y=1, width=180, height=22)
+    ttk.Button(master=frameHum, style="TButton", image=acceptImage, compound=TOP, command=Accept)\
+        .place(x=0, y=0, width=24, height=24)
+    ttk.Button(master=frameHum, style="TButton", image=declineImage, compound=TOP, command=Decline)\
+        .place(x=216, y=0, width=24, height=24)
+
+
+def ChangeStatus():
+    global statusIndex, statusChange, statusNew
+    if statusIndex == 2:
+        statusNew = 0
+        statusChange = True
+    if statusIndex == 3:
+        statusNew = 1
+        statusChange = True
+
+
 def ConnectionErrorWindow():
 
     def Countdown():
@@ -1176,7 +1254,7 @@ os.remove(logfile) if os.path.isfile(logfile) else None
 logging.basicConfig(filename=logfile, level=logging.ERROR)
 
 root = Tk()
-root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.51")
+root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.6")
 root.geometry("1000x740")
 root.wm_geometry("+%d+%d" % (100, 100))
 root["bg"] = bgGlob
@@ -1207,7 +1285,7 @@ framesIdleH = [PhotoImage(file=f"{iconsFolder}idleH.gif", format="gif -index %i"
 acceptImage = PhotoImage(file=f"{iconsFolder}accept.png")
 declineImage = PhotoImage(file=f"{iconsFolder}decline.png")
 
-threadModbus = threading.Thread(target=ReadModbusTCP, daemon=True, name="modbus")
+threadModbus = threading.Thread(target=ModbusTCP, daemon=True, name="modbus")
 threadPlot = threading.Thread(target=Plot, daemon=True, name="plot")
 semaphore = threading.Semaphore(1)
 
@@ -1244,10 +1322,10 @@ buttonOpenFig = ttk.Button(command=OpenFigure, style="TButton", text="Откры
 buttonOpenHistory = ttk.Button(command=OpenHistory, style="TButton", text="Открыть папку с суточными архивами")
 buttonRename = ttk.Button(command=ChangeName, style="TButton", text="Переименовать")
 buttonAdd = ttk.Button(command=lambda: InputIP(empty=False), style="TButton", text="Добавить / Удалить")
-buttonStatus = ttk.Button(style="TButton", text="ПУСК / СТОП", state="disabled")
+buttonStatus = ttk.Button(command=ChangeStatus, style="TButton", text="ПУСК / СТОП")
 buttonSpeed = ttk.Button(style="TButton", text="Активировать контроль скорости", state="disabled")
-buttonSetTemp = ttk.Button(style="TButton", text="Сменить уставку по температуре", state="disabled")
-buttonSetHum = ttk.Button(style="TButton", text="Сменить уставку по влажности", state="disabled")
+buttonSetTemp = ttk.Button(command=ChangeTemperature, style="TButton", text="Сменить уставку по температуре")
+buttonSetHum = ttk.Button(command=ChangeHumidity, style="TButton", text="Сменить уставку по влажности")
 
 ObjectsPlace()
 GetLocalIP()

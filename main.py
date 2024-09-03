@@ -88,6 +88,7 @@ heat = cold = idleT = wet = dry = idleH = False
 connection = exchange = run = draw = failConnection = failDevice = onlinePlot = humidity = historysync = False
 baseData = transferComplete = convertComplete = False
 temperatureChange = humidityChange = statusChange = False
+downloadSuccessfully, convertSuccessfully = False
 readdata = True
 
 master, ftp, machinesList, saved = None, None, None, None
@@ -612,52 +613,100 @@ def ModbusTCP():
         time.sleep(1)
 
 
-def History():
-    global files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
-    history = False
-    while history is False:
-        try:
-            for sourceFile in files:
-                localFile = os.path.join(sourceFolder, sourceFile)
-                with open(localFile, "wb") as file:
-                    ftp.retrbinary("RETR %s" % sourceFile, file.write) if isinstance(ftp, ftplib.FTP) else None
-                csvFile = f"{sourceFile[:8]}.csv"
-                xlsFile = f"{sourceFile[:8]}.xls"
-                csvcommand = [converter, os.path.join(sourceFolder, sourceFile), os.path.join(csvFolder, csvFile)]
-                xlscommand = [converter, os.path.join(sourceFolder, sourceFile), os.path.join(xlsFolder, xlsFile)]
-                subprocess.Popen(csvcommand, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.Popen(xlscommand, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            history = True
-        except Exception as excHistory:
-            logging.error("History error:", exc_info=True)
-            ConnectionErrorWindow() if failConnection is False else None
-        time.sleep(0.1)
+def AccessToRemoteFile(base, file):
+    try:
+        with base.open(file, "r") as basefile:
+            return True
+    except Exception as excRemote:
+        return False
 
 
-def DataUpdate():
+def AccessToLocalFile(file):
+    try:
+        with open(file, "r") as ff:
+            return True
+    except Exception as excHost:
+        return False
 
-    def AccessToFile(base, file):
-        try:
-            with base.open(file, "r") as basefile:
-                return True
-        except Exception as excHost:
-            return False
 
-    global connection, files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice, ftp, readdata, \
-        currentDate, transferComplete
+def DownloadFile(remotefile):
+    global sourceFolder, failConnection, transferComplete, downloadSuccessfully
     try:
         with ftputil.FTPHost(machineIP, "uploadhis", "111111") as host:
             datadir = "/datalog/data/"
             if host.path.exists(datadir):
                 host.chdir(datadir)
-                remoteFile = f"{currentDate}.dtl"
-                if host.path.isfile(remoteFile):
-                    if AccessToFile(host, remoteFile):
-                        localFile = os.path.join(sourceFolder, remoteFile)
-                        host.download(remoteFile, localFile)
+                if host.path.isfile(remotefile):
+                    if AccessToRemoteFile(host, remotefile):
+                        localfile = os.path.join(sourceFolder, remotefile)
+                        host.download(remotefile, localfile)
+    except Exception:
+        logging.error("File download error", exc_info=True)
+        ConnectionErrorWindow() if failConnection else None
+    else:
+        downloadSuccessfully = True
+
+
+def ConvertFile(command):
+    global convertSuccessfully
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    creationflags = subprocess.CREATE_NO_WINDOW
+    try:
+        process = subprocess.Popen(command, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   creationflags=creationflags, startupinfo=startupinfo)
+        process.wait()
+        if process.returncode != 0:
+            pass
+    except Exception as excProcess:
+        logging.error("File convert error:", exc_info=True)
+    else:
+        convertSuccessfully = True
+
+
+def History():
+    global files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice, \
+        downloadSuccessfully, convertSuccessfully
+    history = False
+    while history is False:
+        try:
+            for sourceFile in files:
+                sourcePath = os.path.join(sourceFolder, sourceFile)
+
+                downloadSuccessfully = False
+                while downloadSuccessfully is False:
+                    DownloadFile(sourcePath)
+                    time.sleep(1)
+
+                csvFile = f"{sourceFile[:8]}.csv"
+                xlsFile = f"{sourceFile[:8]}.xls"
+                csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, sourceFile),
+                              os.path.join(csvFolder, csvFile)]
+                xlsconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, sourceFile),
+                              os.path.join(xlsFolder, xlsFile)]
+                if AccessToLocalFile(sourceFile):
+                    convertSuccessfully = False
+                    while convertSuccessfully is False:
+                        ConvertFile(csvconvert)
+                        time.sleep(1)
+                    convertSuccessfully = False
+                    while convertSuccessfully is False:
+                        ConvertFile(xlsconvert)
+                        time.sleep(1)
+            history = True
+        except Exception:
+            logging.error("History synchronize error:", exc_info=True)
+            ConnectionErrorWindow() if failConnection is False else None
         time.sleep(1)
+
+
+def DataUpdate():
+    global failConnection, currentDate, transferComplete
+    try:
+        remoteFile = f"{currentDate}.dtl"
+        DownloadFile(remoteFile)
     except Exception as excData:
-        time.sleep(1)
         logging.error("Cycle error", exc_info=True)
         ConnectionErrorWindow() if failConnection else None
     else:
@@ -665,43 +714,15 @@ def DataUpdate():
 
 
 def DataConvert():
-
-    def AccessToFile(file):
-        try:
-            with open(file, "r") as ff:
-                return True
-        except Exception as excHost:
-            return False
-
-    def RunProcess(command):
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-        creationflags = subprocess.CREATE_NO_WINDOW
-        try:
-            process = subprocess.Popen(command, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                       creationflags=creationflags, startupinfo=startupinfo)
-            process.wait()
-            if process.returncode != 0:
-                pass
-        except Exception as excProcess:
-            logging.error("Subprocess error:", exc_info=True)
-        finally:
-            semaphore.release()
-
     global sourceFolder, csvFolder, historysync, currentDate, convertComplete
     try:
         currentFile = f"{sourceFolder}{currentDate}.dtl"
         csvFile = f"{currentDate}.csv"
-        xlsFile = f"{currentDate}.xls"
-        csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile), os.path.join(csvFolder, csvFile)]
-        xlsconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile), os.path.join(xlsFolder, xlsFile)]
-        if AccessToFile(currentFile):
-            RunProcess(csvconvert)
-            RunProcess(xlsconvert)
-            historysync = False
-    except Exception as excConverter:
-        time.sleep(1)
+        csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile),
+                      os.path.join(csvFolder, csvFile)]
+        if AccessToLocalFile(currentFile):
+            ConvertFile(csvconvert)
+    except Exception:
         logging.error("Conversion error:", exc_info=True)
     else:
         convertComplete = True
@@ -1051,9 +1072,13 @@ def Plot():
 
     def DatetimeConvert():
         global frameCurrent
-        frameCurrent["Datetime"] = pandas.to_datetime(frameCurrent["Date"] + " " + frameCurrent["Time"],
-                                                      dayfirst=True)
-        frameCurrent = pandas.DataFrame(frameCurrent[combColumns])
+        if ValidCheck(frameCurrent):
+            try:
+                frameCurrent["Datetime"] = pandas.to_datetime(frameCurrent["Date"] + " " + frameCurrent["Time"],
+                                                              dayfirst=True)
+                frameCurrent = pandas.DataFrame(frameCurrent[combColumns])
+            except Exception as excDTconvert:
+                logging.error("Datetime convert failed:", exc_info=True)
 
     global sliceActive, baseMode, onlinePlot, humidity, csvFolder, frameData, frameCurrent, frameColumns, draw, \
         frameDataFrom, frameDataTo, graphTemp, baseData, graphHum

@@ -26,23 +26,22 @@ import logging
 
 xLabelPos, xValuePos, yPos = 20, 190, 85
 fgLab, fgVal, bgGlob, bgLoc = "white", "yellow", "#2B0542", "#510D70"
-baseMode = "Temperature"
-baseStatus = "Stop"
-wait = 10
-
 status = ("НЕТ СВЯЗИ", "АВАРИЯ", "РАБОТА", "ОСТАНОВ")
 mode = ("НЕТ СВЯЗИ", "НАСТРОЙКА", "ТЕРМО", "ВЛАГА")
 cycleTemp = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАГРЕВ", "ОХЛАЖДЕНИЕ")
 cycleHum = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАСЫЩЕНИЕ", "ОСУШЕНИЕ")
 
-graphLabels = ["5 минут", "15 минут", "30 минут", "1 час", "2 часа", "4 часа", "<Настроить>"]
-graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:05:00"]
 frameColumns = ["Date", "Time", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
+frameCurrent = frameData = frameDataFrom = frameDataTo = pandas.DataFrame(columns=frameColumns)
 combColumns = ["Datetime", "TemperatureCurrent", "TemperatureSet", "HumidityCurrent", "HumiditySet"]
 ipColumns = ["ip", "name"]
-
-frameCurrent = frameData = frameDataFrom = frameDataTo = pandas.DataFrame(columns=frameColumns)
 frameIP = pandas.DataFrame(columns=ipColumns)
+
+temperatureCurrent, temperatureSet = -1.1, -1.1
+humidityCurrent, humiditySet = 1, 1
+temperatureNew, humidityNew, statusNew = 0, 0, 0
+version, tmin, tmax = 0, 0, 0
+statusIndex, modeIndex, cycleTempIndex, cycleHumIndex = 0, 0, 0, 0
 
 runFolder = os.path.abspath(os.curdir)
 rootFolder = runFolder if len(runFolder) < 4 else runFolder + "\\"
@@ -53,48 +52,30 @@ sourceFolder = f"{rootFolder}support\\data\\"
 csvFolder = f"{rootFolder}\\CSV\\"
 xlsFolder = f"{rootFolder}\\XLS\\"
 
-graphDefault = StringVar()
-currentMachine = StringVar()
-listIP = {}
-files = []
-
-dateNow: datetime
-dateInitial: datetime
-dateFinal: datetime
-timeInitial: datetime
-timeFinal: datetime
-
-temperatureCurrent: float
-temperatureSet: float
-humidityCurrent: int
-humiditySet: int
-temperatureNew: int
-humidityNew: int
-statusNew: int
-version: int
-tmin: int
-tmax: int
-statusIndex: int
-modeIndex: int
-cycleTempIndex: int
-cycleHumIndex: int
-
-localIP, panelIP, panelDate, currentDate, currentDateDot, panelTime, currentTime = "", "", "", "", "", "", ""
-filename, picname, machineIP, machineName, lastlog = "", "", "", "", ""
+localIP, panelIP, panelDate, currentDate, currentDateDot, panelTime, currentTime, filename, picname = "", "", "", "", "", "", "", "", ""
+machineIP, machineName, lastlog = "", "", ""
 sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo = "", "", "", ""
-
+baseMode, baseStatus = "Temperature", "Stop"
 sliceActive = sliceChange = showSlice = showError = showButton = False
 heat = cold = idleT = wet = dry = idleH = False
 connection = exchange = run = draw = failConnection = failDevice = onlinePlot = humidity = historysync = False
 baseData = transferComplete = convertComplete = False
 temperatureChange = humidityChange = statusChange = False
-downloadSuccessfully, convertSuccessfully = False
-readdata = True
 
-master, ftp, machinesList, saved = None, None, None, None
-buttonEdit, buttonOnline, sliceFrame, labelError = None, None, None, None
-timeNow, timeDif, fileList, fileMain, timeBegin, graphTemp, graphHum = None, None, None, None, None, None, None
-heatLabel, coldLabel, idleTempLabel, wetLabel, dryLabel, idleHumLabel = None, None, None, None, None, None
+currentMachine = StringVar
+listIP = {}
+files = []
+master = None
+ftp = None
+machinesList = None
+readdata = True
+timeNow = None
+timeDif = None
+fileList = None
+fileMain = None
+timeBegin = None
+graphTemp = None
+graphHum = None
 
 
 def ObjectsPlace():
@@ -292,17 +273,17 @@ def HideGif(ani):
     global heatLabel, coldLabel, idleTempLabel, wetLabel, dryLabel, idleHumLabel
     match ani:
         case "heat":
-            heatLabel.destroy() if isinstance(heatLabel, tkinter.Label) else None
+            heatLabel.destroy()
         case "cold":
-            coldLabel.destroy() if isinstance(coldLabel, tkinter.Label) else None
+            coldLabel.destroy()
         case "idleT":
-            idleTempLabel.destroy() if isinstance(idleTempLabel, tkinter.Label) else None
+            idleTempLabel.destroy()
         case "wet":
-            wetLabel.destroy() if isinstance(wetLabel, tkinter.Label) else None
+            wetLabel.destroy()
         case "dry":
-            dryLabel.destroy() if isinstance(dryLabel, tkinter.Label) else None
+            dryLabel.destroy()
         case "idleH":
-            idleHumLabel.destroy() if isinstance(idleHumLabel, tkinter.Label) else None
+            idleHumLabel.destroy()
 
 
 def UpdateGif(ani, index=0):
@@ -313,39 +294,39 @@ def UpdateGif(ani, index=0):
                 index += 1
                 if index == 14:
                     index = 0
-                heatLabel.configure(image=framePic, borderwidth=0) if isinstance(heatLabel, Label) else None
+                heatLabel.configure(image=framePic, borderwidth=0)
             case "cold":
                 framePic = framesCold[index]
                 index += 1
                 if index == 10:
                     index = 0
-                coldLabel.configure(image=framePic, borderwidth=0) if isinstance(coldLabel, Label) else None
+                coldLabel.configure(image=framePic, borderwidth=0)
             case "idleT":
                 framePic = framesIdleT[index]
                 index += 1
                 if index == 11:
                     index = 0
-                idleTempLabel.configure(image=framePic, borderwidth=0) if isinstance(idleTempLabel, Label) else None
+                idleTempLabel.configure(image=framePic, borderwidth=0)
             case "wet":
                 framePic = framesWet[index]
                 index += 1
                 if index == 12:
                     index = 0
-                wetLabel.configure(image=framePic, borderwidth=0) if isinstance(wetLabel, Label) else None
+                wetLabel.configure(image=framePic, borderwidth=0)
             case "dry":
                 framePic = framesDry[index]
                 index += 1
                 if index == 10:
                     index = 0
-                dryLabel.configure(image=framePic, borderwidth=0) if isinstance(dryLabel, Label) else None
+                dryLabel.configure(image=framePic, borderwidth=0)
             case "idleH":
                 framePic = framesIdleH[index]
                 index += 1
                 if index == 11:
                     index = 0
-                idleHumLabel.configure(image=framePic, borderwidth=0) if isinstance(idleHumLabel, Label) else None
+                idleHumLabel.configure(image=framePic, borderwidth=0)
         root.after(100, UpdateGif, ani, index)
-    except Exception as excGif:
+    except Exception:
         return
 
 
@@ -355,10 +336,8 @@ def ChangeName():
         global machineIP, machineName, listIP, frameIP, machinesList, currentMachine
         machineName = newName.get()
         listIP[machineIP] = machineName
-        if isinstance(machinesList, ttk.Combobox):
-            machinesList["values"] = [f"{k} :: {v}" for k, v in listIP.items()]
-        if isinstance(currentMachine, StringVar):
-            currentMachine.set(value=f"{machineIP} :: {machineName}")
+        machinesList["values"] = [f"{k} :: {v}" for k, v in listIP.items()]
+        currentMachine.set(value=f"{machineIP} :: {machineName}")
         frameIP = pandas.DataFrame(list(listIP.items()), columns=["ip", "name"])
         frameIP.to_csv(f"{rootFolder}config.ini", index=False)
         frameName.destroy()
@@ -434,7 +413,7 @@ def InputIP(empty):
 
     def Shift(event):
         global saved
-        chosenIP = saved.get().split(sep=" :: ")[0] if isinstance(saved, ttk.Combobox) else None
+        chosenIP = saved.get().split(sep=" :: ")[0]
         entryIP.delete(0, END)
         entryIP.insert(index=0, string=chosenIP)
 
@@ -468,7 +447,7 @@ def InputIP(empty):
     buttonDel = ttk.Button(master=screenIP, style="TButton", text="Удалить камеру", command=Delete, state="disabled")
     buttonDel.place(x=160, y=110, width=130)
     saved = ttk.Combobox(master=screenIP, values=[f"{k} :: {v}" for k, v in listIP.items()],
-                         state="readonly", background=bgLoc, foreground=bgLoc)
+                             state="readonly", background=bgLoc, foreground=bgLoc)
     saved.bind("<<ComboboxSelected>>", Shift)
     saved.place(x=10, y=70, width=280)
 
@@ -528,7 +507,7 @@ def UpdateList():
 
     def CurrentMachine(event):
         global machineIP, machineName, exchange
-        currentList = currentMachine.get().split(sep=" :: ") if isinstance(currentMachine, StringVar) else None
+        currentList = currentMachine.get().split(sep=" :: ")
         chosenIP = currentList[0]
         if chosenIP != machineIP:
             machineIP = currentList[0]
@@ -537,10 +516,9 @@ def UpdateList():
             OpenConnection()
 
     global frameIP, currentMachine, machinesList, machineIP, machineName, onlinePlot
-    currentMachine.set(value=f"{machineIP} :: {machineName}") if isinstance(currentMachine, StringVar) else None
-    if isinstance(machinesList, ttk.Combobox):
-        machinesList["values"] = [f"{k} :: {v}" for k, v in listIP.items()]
-        machinesList.bind("<<ComboboxSelected>>", CurrentMachine)
+    currentMachine.set(value=f"{machineIP} :: {machineName}")
+    machinesList["values"] = [f"{k} :: {v}" for k, v in listIP.items()]
+    machinesList.bind("<<ComboboxSelected>>", CurrentMachine)
     frameIP = pandas.DataFrame(list(listIP.items()), columns=ipColumns)
     frameIP.to_csv(f"{rootFolder}config.ini", index=False)
     onlinePlot = True
@@ -613,100 +591,51 @@ def ModbusTCP():
         time.sleep(1)
 
 
-def AccessToRemoteFile(base, file):
-    try:
-        with base.open(file, "r") as basefile:
-            return True
-    except Exception as excRemote:
-        return False
-
-
-def AccessToLocalFile(file):
-    try:
-        with open(file, "r") as ff:
-            return True
-    except Exception as excHost:
-        return False
-
-
-def DownloadFile(remotefile):
-    global sourceFolder, failConnection, transferComplete, downloadSuccessfully
-    try:
-        with ftputil.FTPHost(machineIP, "uploadhis", "111111") as host:
-            datadir = "/datalog/data/"
-            if host.path.exists(datadir):
-                host.chdir(datadir)
-                if host.path.isfile(remotefile):
-                    if AccessToRemoteFile(host, remotefile):
-                        localfile = os.path.join(sourceFolder, remotefile)
-                        host.download(remotefile, localfile)
-    except Exception:
-        logging.error("File download error", exc_info=True)
-        ConnectionErrorWindow() if failConnection else None
-    else:
-        downloadSuccessfully = True
-
-
-def ConvertFile(command):
-    global convertSuccessfully
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    startupinfo.wShowWindow = subprocess.SW_HIDE
-    creationflags = subprocess.CREATE_NO_WINDOW
-    try:
-        process = subprocess.Popen(command, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                   creationflags=creationflags, startupinfo=startupinfo)
-        process.wait()
-        if process.returncode != 0:
-            pass
-    except Exception as excProcess:
-        logging.error("File convert error:", exc_info=True)
-    else:
-        convertSuccessfully = True
-
-
 def History():
-    global files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice, \
-        downloadSuccessfully, convertSuccessfully
+    global files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
     history = False
     while history is False:
         try:
             for sourceFile in files:
-                sourcePath = os.path.join(sourceFolder, sourceFile)
-
-                downloadSuccessfully = False
-                while downloadSuccessfully is False:
-                    DownloadFile(sourcePath)
-                    time.sleep(1)
-
+                localFile = os.path.join(sourceFolder, sourceFile)
+                with open(localFile, "wb") as file:
+                    ftp.retrbinary("RETR %s" % sourceFile, file.write) if isinstance(ftp, ftplib.FTP) else None
                 csvFile = f"{sourceFile[:8]}.csv"
                 xlsFile = f"{sourceFile[:8]}.xls"
-                csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, sourceFile),
-                              os.path.join(csvFolder, csvFile)]
-                xlsconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, sourceFile),
-                              os.path.join(xlsFolder, xlsFile)]
-                if AccessToLocalFile(sourceFile):
-                    convertSuccessfully = False
-                    while convertSuccessfully is False:
-                        ConvertFile(csvconvert)
-                        time.sleep(1)
-                    convertSuccessfully = False
-                    while convertSuccessfully is False:
-                        ConvertFile(xlsconvert)
-                        time.sleep(1)
+                csvcommand = [converter, os.path.join(sourceFolder, sourceFile), os.path.join(csvFolder, csvFile)]
+                xlscommand = [converter, os.path.join(sourceFolder, sourceFile), os.path.join(xlsFolder, xlsFile)]
+                subprocess.Popen(csvcommand, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(xlscommand, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             history = True
-        except Exception:
-            logging.error("History synchronize error:", exc_info=True)
+        except Exception as excHistory:
+            logging.error("History error:", exc_info=True)
             ConnectionErrorWindow() if failConnection is False else None
         time.sleep(1)
 
 
 def DataUpdate():
-    global failConnection, currentDate, transferComplete
+
+    def AccessToFile(host, file):
+        try:
+            with host.open(file, "r") as ff:
+                return True
+        except Exception as excHost:
+            return False
+
+    global connection, files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice, ftp, readdata, currentDate, transferComplete
     try:
-        remoteFile = f"{currentDate}.dtl"
-        DownloadFile(remoteFile)
+        with ftputil.FTPHost(machineIP, "uploadhis", "111111") as ftphost:
+            datadir = "/datalog/data/"
+            if ftphost.path.exists(datadir):
+                ftphost.chdir(datadir)
+                remoteFile = f"{currentDate}.dtl"
+                if ftphost.path.isfile(remoteFile):
+                    if AccessToFile(ftphost, remoteFile):
+                        localFile = os.path.join(sourceFolder, remoteFile)
+                        ftphost.download(remoteFile, localFile)
+        time.sleep(1)
     except Exception as excData:
+        time.sleep(1)
         logging.error("Cycle error", exc_info=True)
         ConnectionErrorWindow() if failConnection else None
     else:
@@ -714,15 +643,43 @@ def DataUpdate():
 
 
 def DataConvert():
+
+    def AccessToFile(file):
+        try:
+            with open(file, "r") as ff:
+                return True
+        except Exception as excHost:
+            return False
+
+    def RunProcess(command):
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        creationflags = subprocess.CREATE_NO_WINDOW
+        try:
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                       creationflags=creationflags, startupinfo=startupinfo)
+            process.wait()
+            if process.returncode != 0:
+                pass
+        except Exception as excProcess:
+            logging.error("Subprocess error:", exc_info=True)
+        finally:
+            semaphore.release()
+
     global sourceFolder, csvFolder, historysync, currentDate, convertComplete
     try:
         currentFile = f"{sourceFolder}{currentDate}.dtl"
         csvFile = f"{currentDate}.csv"
-        csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile),
-                      os.path.join(csvFolder, csvFile)]
-        if AccessToLocalFile(currentFile):
-            ConvertFile(csvconvert)
-    except Exception:
+        xlsFile = f"{currentDate}.xls"
+        csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile), os.path.join(csvFolder, csvFile)]
+        xlsconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile), os.path.join(xlsFolder, xlsFile)]
+        if AccessToFile(currentFile):
+            RunProcess(csvconvert)
+            RunProcess(xlsconvert)
+            historysync = False
+    except Exception as excConverter:
+        time.sleep(1)
         logging.error("Conversion error:", exc_info=True)
     else:
         convertComplete = True
@@ -736,6 +693,8 @@ def UserControl():
         baseData = False
 
     global graphLabels, graphPeriods, graphDefault, currentMachine, listIP, machinesList, machineIP, machineName
+    graphLabels = ["5 минут", "15 минут", "30 минут", "1 час", "2 часа", "4 часа", "<Настроить>"]
+    graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:05:00"]
     graphDefault = StringVar(value=graphLabels[0])
     graphPeriod = ttk.Combobox(values=graphLabels, textvariable=graphDefault, width=21, state="readonly",
                                background=bgLoc, foreground=bgLoc)
@@ -826,11 +785,11 @@ def ShowSlice():
         except ValueError:
             if int(dayFinal.get()) == 0:
                 dateFinal = datetime.strptime(f"{int(dayFinal.get()) + 1}/{monthFinal.get()}/{yearNow}",
-                                              "%d/%m/%Y")
+                                                "%d/%m/%Y")
                 dateFinal = dateFinal - timedelta(days=1)
             else:
                 dateFinal = datetime.strptime(f"{int(dayFinal.get()) - 1}/{monthFinal.get()}/{yearNow}",
-                                              "%d/%m/%Y")
+                                                "%d/%m/%Y")
                 dateFinal = dateFinal + timedelta(days=1)
 
         timeNow = datetime.strptime(currentTime, "%H:%M:%S")
@@ -878,10 +837,8 @@ def ShowSlice():
     ttk.Button(master=sliceFrame, text="<°C> & <%RH>", command=lambda: GetSlice(True), style="TButton", state=humstate) \
         .place(x=160, y=110, width=150, height=25)
 
-    tkinter.Label(master=sliceFrame, text="Начало выборки", anchor="w", bg=bgLoc, fg="white") \
-        .place(x=0, y=10, height=20)
-    tkinter.Label(master=sliceFrame, text="Дата:", anchor="e", bg=bgLoc, fg="white") \
-        .place(x=120, y=0, width=50, height=20)
+    tkinter.Label(master=sliceFrame, text="Начало выборки", anchor="w", bg=bgLoc, fg="white").place(x=0, y=10, height=20)
+    tkinter.Label(master=sliceFrame, text="Дата:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=0, width=50, height=20)
     dayFrom = tkinter.Spinbox(master=sliceFrame, from_=0, to=32, state="readonly", format="%02.0f",
                               textvariable=dayInitial, command=DatetimeValidControl,
                               buttonbackground=bgLoc, foreground=bgLoc)
@@ -890,10 +847,8 @@ def ShowSlice():
     monthFrom = tkinter.Spinbox(master=sliceFrame, from_=1, to=12, state="disabled", format="%02.0f",
                                 textvariable=monthInitial, buttonbackground="dim gray", foreground=bgLoc)
     monthFrom.place(x=225, y=0, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=f" .  {yearNow}", anchor="w", bg=bgLoc, fg="white") \
-        .place(x=255, y=0, width=40, height=20)
-    tkinter.Label(master=sliceFrame, text="Время:", anchor="e", bg=bgLoc, fg="white") \
-        .place(x=120, y=25, width=50, height=20)
+    tkinter.Label(master=sliceFrame, text=f" .  {yearNow}", anchor="w", bg=bgLoc, fg="white").place(x=255, y=0, width=40, height=20)
+    tkinter.Label(master=sliceFrame, text="Время:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=25, width=50, height=20)
     hourFrom = tkinter.Spinbox(master=sliceFrame, from_=0, to=23, state="readonly", format="%02.0f",
                                textvariable=hourInitial, command=DatetimeValidControl,
                                buttonbackground=bgLoc, foreground=bgLoc)
@@ -903,13 +858,10 @@ def ShowSlice():
                                   textvariable=minutesInitial, command=DatetimeValidControl,
                                   buttonbackground=bgLoc, foreground=bgLoc)
     minutesFrom.place(x=225, y=25, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=" :  00", anchor="w", bg=bgLoc, fg="white") \
-        .place(x=255, y=25, width=40, height=20)
+    tkinter.Label(master=sliceFrame, text=" :  00", anchor="w", bg=bgLoc, fg="white").place(x=255, y=25, width=40, height=20)
 
-    tkinter.Label(master=sliceFrame, text="Конец выборки", anchor="w", bg=bgLoc, fg="white") \
-        .place(x=0, y=65, height=20)
-    tkinter.Label(master=sliceFrame, text="Дата:", anchor="e", bg=bgLoc, fg="white") \
-        .place(x=120, y=55, width=50, height=20)
+    tkinter.Label(master=sliceFrame, text="Конец выборки", anchor="w", bg=bgLoc, fg="white").place(x=0, y=65, height=20)
+    tkinter.Label(master=sliceFrame, text="Дата:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=55, width=50, height=20)
     dayTo = tkinter.Spinbox(master=sliceFrame, from_=0, to=32, state="readonly", format="%02.0f",
                             textvariable=dayFinal, command=DatetimeValidControl,
                             buttonbackground=bgLoc, foreground=bgLoc)
@@ -918,10 +870,8 @@ def ShowSlice():
     monthTo = tkinter.Spinbox(master=sliceFrame, from_=1, to=12, state="disabled", format="%02.0f",
                               textvariable=monthFinal, buttonbackground="dim gray", foreground=bgLoc)
     monthTo.place(x=225, y=55, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=f" .  {yearNow}", anchor="w", bg=bgLoc, fg="white") \
-        .place(x=255, y=55, width=40, height=20)
-    tkinter.Label(master=sliceFrame, text="Время:", anchor="e", bg=bgLoc, fg="white") \
-        .place(x=120, y=80, width=50, height=20)
+    tkinter.Label(master=sliceFrame, text=f" .  {yearNow}", anchor="w", bg=bgLoc, fg="white").place(x=255, y=55, width=40, height=20)
+    tkinter.Label(master=sliceFrame, text="Время:", anchor="e", bg=bgLoc, fg="white").place(x=120, y=80, width=50, height=20)
     hourTo = tkinter.Spinbox(master=sliceFrame, from_=0, to=23, state="readonly", format="%02.0f",
                              textvariable=hourFinal, command=DatetimeValidControl,
                              buttonbackground=bgLoc, foreground=bgLoc)
@@ -931,13 +881,12 @@ def ShowSlice():
                                 textvariable=minutesFinal, command=DatetimeValidControl,
                                 buttonbackground=bgLoc, foreground=bgLoc, buttonuprelief="sunken")
     minutesTo.place(x=225, y=80, width=30, height=20)
-    tkinter.Label(master=sliceFrame, text=" :  00", anchor="w", bg=bgLoc, fg="white") \
-        .place(x=255, y=80, width=40, height=20)
+    tkinter.Label(master=sliceFrame, text=" :  00", anchor="w", bg=bgLoc, fg="white").place(x=255, y=80, width=40, height=20)
 
 
 def HideSlice():
     global sliceFrame
-    sliceFrame.destroy() if isinstance(sliceFrame, Frame) else None
+    sliceFrame.destroy()
 
 
 def Plot():
@@ -1021,8 +970,7 @@ def Plot():
                     else:
                         fileFrom = os.path.join(csvFolder, fileList[-2])
                         fileTo = os.path.join(csvFolder, fileList[-1])
-                        timeBegin = str(((timeNow - timeDif) +
-                                         datetime.strptime("23:59:59", "%H:%M:%S")).time())
+                        timeBegin = str(((timeNow - timeDif) + datetime.strptime("23:59:59", "%H:%M:%S")).time())
                         try:
                             if baseData is False:
                                 frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
@@ -1033,8 +981,7 @@ def Plot():
                             logging.error("Error reading two CSV files:", exc_info=True)
                             PlotError(True)
                         else:
-                            frameDataFrom = pandas.DataFrame(frameDataFrom.loc
-                                                             [(frameDataFrom["Time"] >= timeBegin), frameColumns])
+                            frameDataFrom = pandas.DataFrame(frameDataFrom.loc[(frameDataFrom["Time"] >= timeBegin), frameColumns])
                             frameDataTo = pandas.DataFrame(frameDataTo)
                             if (ValidCheck(frameDataFrom) & ValidCheck(frameDataTo) &
                                     frameDataFrom.empty is False & frameDataTo.empty is False):
@@ -1048,8 +995,7 @@ def Plot():
         if sliceDateFrom == sliceDateTo:
             fileMain = os.path.join(csvFolder, f"{sliceDateFrom}.csv")
             frameData = pandas.read_csv(fileMain, sep=",", header=0)
-            frameData = frameData.loc[(frameData["Time"] >= sliceTimeFrom) &
-                                      (frameData["Time"] <= sliceTimeTo), frameColumns]
+            frameData = frameData.loc[(frameData["Time"] >= sliceTimeFrom) & (frameData["Time"] <= sliceTimeTo), frameColumns]
             frameCurrent = pandas.DataFrame(frameData)
         else:
             dateFrom = datetime.strptime(sliceDateFrom, "%Y%m%d")
@@ -1057,7 +1003,7 @@ def Plot():
             fileFrom = os.path.join(csvFolder, f"{sliceDateFrom}.csv")
             frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
             frameData = pandas.DataFrame(frameDataFrom.loc[(frameDataFrom["Time"] >= sliceTimeFrom) &
-                                                           (frameDataFrom.index % 10 == 0), frameColumns])
+                                                               (frameDataFrom.index % 10 == 0), frameColumns])
             for i in range(1, (dateTo - dateFrom).days + 1):
                 sliceDateNext = datetime.strftime(dateFrom + timedelta(days=i), "%Y%m%d")
                 fileTo = os.path.join(csvFolder, f"{sliceDateNext}.csv")
@@ -1077,8 +1023,8 @@ def Plot():
                 frameCurrent["Datetime"] = pandas.to_datetime(frameCurrent["Date"] + " " + frameCurrent["Time"],
                                                               dayfirst=True)
                 frameCurrent = pandas.DataFrame(frameCurrent[combColumns])
-            except Exception as excDTconvert:
-                logging.error("Datetime convert failed:", exc_info=True)
+            except Exception:
+                logging.error("Frame is not valid:", exc_info=True)
 
     global sliceActive, baseMode, onlinePlot, humidity, csvFolder, frameData, frameCurrent, frameColumns, draw, \
         frameDataFrom, frameDataTo, graphTemp, baseData, graphHum
@@ -1301,6 +1247,7 @@ def DeviceErrorWindow():
     screenError.protocol("WM_DELETE_WINDOW", sys.exit)
     screenIcon = PhotoImage(file=f"{iconsFolder}icon.png")
     screenError.iconphoto(False, screenIcon)
+
     tkinter.Label(master=screenError, bg="yellow", text="Невозможно установить связь!").place(x=10, y=10, width=280)
     ttk.Button(master=screenError, style="TButton", text="Подождать", command=CloseWindow).place(x=20, y=60, width=120)
     ttk.Button(master=screenError, style="TButton", text="Завершить", command=sys.exit).place(x=160, y=60, width=120)
@@ -1311,7 +1258,7 @@ os.remove(logfile) if os.path.isfile(logfile) else None
 logging.basicConfig(filename=logfile, level=logging.ERROR)
 
 root = Tk()
-root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.61")
+root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.6")
 root.geometry("1000x740")
 root.wm_geometry("+%d+%d" % (100, 100))
 root["bg"] = bgGlob
@@ -1332,12 +1279,12 @@ canvas.create_rectangle(660, 0, 980, 180, fill="#510D70", outline="#510D70")
 canvas.create_rectangle(18, 208, 988, 638, fill="#352642", outline="#241C2B")
 canvas.create_rectangle(10, 200, 980, 630, fill="#510D70", outline="#510D70")
 
-framesHeat = [PhotoImage(file=f"{iconsFolder}heat.gif", format="gif -index %i" %i) for i in range(15)]
-framesCold = [PhotoImage(file=f"{iconsFolder}cold.gif", format="gif -index %i" %i) for i in range(10)]
-framesIdleT = [PhotoImage(file=f"{iconsFolder}idleT.gif", format="gif -index %i" %i) for i in range(11)]
-framesWet = [PhotoImage(file=f"{iconsFolder}wet.gif", format="gif -index %i" %i) for i in range(12)]
-framesDry = [PhotoImage(file=f"{iconsFolder}dry.gif", format="gif -index %i" %i) for i in range(10)]
-framesIdleH = [PhotoImage(file=f"{iconsFolder}idleH.gif", format="gif -index %i" %i) for i in range(11)]
+framesHeat = [PhotoImage(file=f"{iconsFolder}heat.gif", format="gif -index %i" %(i)) for i in range(15)]
+framesCold = [PhotoImage(file=f"{iconsFolder}cold.gif", format="gif -index %i" %(i)) for i in range(10)]
+framesIdleT = [PhotoImage(file=f"{iconsFolder}idleT.gif", format="gif -index %i" %(i)) for i in range(11)]
+framesWet = [PhotoImage(file=f"{iconsFolder}wet.gif", format="gif -index %i" %(i)) for i in range(12)]
+framesDry = [PhotoImage(file=f"{iconsFolder}dry.gif", format="gif -index %i" %(i)) for i in range(10)]
+framesIdleH = [PhotoImage(file=f"{iconsFolder}idleH.gif", format="gif -index %i" %(i)) for i in range(11)]
 
 acceptImage = PhotoImage(file=f"{iconsFolder}accept.png")
 declineImage = PhotoImage(file=f"{iconsFolder}decline.png")

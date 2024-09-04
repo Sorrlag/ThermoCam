@@ -2,7 +2,6 @@ import subprocess
 import socket
 import os
 import ftplib
-import ftputil
 import sys
 import time
 import threading
@@ -56,7 +55,7 @@ xlsFolder = f"{rootFolder}\\XLS\\"
 graphDefault = StringVar
 currentMachine = StringVar
 listIP = {}
-files = []
+historyFiles = []
 
 dateNow: datetime
 dateInitial: datetime
@@ -85,11 +84,9 @@ sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo = "", "", "", ""
 
 sliceActive = sliceChange = showSlice = showError = showButton = False
 heat = cold = idleT = wet = dry = idleH = False
-connection = exchange = run = draw = failConnection = failDevice = onlinePlot = humidity = historysync = False
-baseData = transferComplete = convertComplete = False
+connection = exchange = run = draw = failConnection = failDevice = onlinePlot = humidity = actualData = xlsNeed = False
 temperatureChange = humidityChange = statusChange = False
-downloadSuccessfully = convertSuccessfully = False
-readdata = True
+updateData = True
 
 master, ftp, machinesList, saved = None, None, None, None
 buttonEdit, buttonOnline, sliceFrame, labelError = None, None, None, None
@@ -98,8 +95,8 @@ heatLabel, coldLabel, idleTempLabel, wetLabel, dryLabel, idleHumLabel = None, No
 
 statusIndex = 0
 modeIndex = 0
-temperatureCurrent = 0.0
-temperatureSet = 0.0
+temperatureCurrent = 0
+temperatureSet = 0
 humidityCurrent = 0
 humiditySet = 0
 cycleTempIndex = 0
@@ -132,7 +129,6 @@ def ObjectsPlace():
 
 
 def LabelsShow():
-    global status, statusIndex, modeIndex
     logoLabel["text"] = "© 'МИР ОБОРУДОВАНИЯ', Санкт-Петербург, 2024"
     armIPLabel["text"] = f"IP адрес рабочей станции: {localIP}"
     panelIPLabel["text"] = f"IP адрес климатической камеры: {panelIP}"
@@ -302,17 +298,17 @@ def HideGif(ani):
     global heatLabel, coldLabel, idleTempLabel, wetLabel, dryLabel, idleHumLabel
     match ani:
         case "heat":
-            heatLabel.destroy() if isinstance(heatLabel, tkinter.Label) else None
+            heatLabel.destroy() if isinstance(heatLabel, Label) else None
         case "cold":
-            coldLabel.destroy() if isinstance(coldLabel, tkinter.Label) else None
+            coldLabel.destroy() if isinstance(coldLabel, Label) else None
         case "idleT":
-            idleTempLabel.destroy() if isinstance(idleTempLabel, tkinter.Label) else None
+            idleTempLabel.destroy() if isinstance(idleTempLabel, Label) else None
         case "wet":
-            wetLabel.destroy() if isinstance(wetLabel, tkinter.Label) else None
+            wetLabel.destroy() if isinstance(wetLabel, Label) else None
         case "dry":
-            dryLabel.destroy() if isinstance(dryLabel, tkinter.Label) else None
+            dryLabel.destroy() if isinstance(dryLabel, Label) else None
         case "idleH":
-            idleHumLabel.destroy() if isinstance(idleHumLabel, tkinter.Label) else None
+            idleHumLabel.destroy() if isinstance(idleHumLabel, Label) else None
 
 
 def UpdateGif(ani, index=0):
@@ -356,6 +352,7 @@ def UpdateGif(ani, index=0):
                 idleHumLabel.configure(image=framePic, borderwidth=0) if isinstance(idleHumLabel, Label) else None
         root.after(100, UpdateGif, ani, index)
     except Exception as excGif:
+        logging.error("Visual status print error:", excGif, exc_info=True)
         return
 
 
@@ -484,7 +481,7 @@ def InputIP(empty):
 
 
 def OpenConnection():
-    global machineIP, panelIP, master, ftp, files, sourceFolder, csvFolder, xlsFolder, \
+    global machineIP, panelIP, master, ftp, historyFiles, sourceFolder, csvFolder, xlsFolder, \
         failConnection, failDevice, run, exchange
     try:
         master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
@@ -493,7 +490,7 @@ def OpenConnection():
         ftp = ftplib.FTP(host=machineIP, timeout=8)
         ftp.login(user="uploadhis", passwd="111111")
         ftp.cwd("datalog/data")
-        files = ftp.nlst()
+        historyFiles = ftp.nlst()
         time.sleep(1)
         sourceFolder = f"{rootFolder}support\\{machineIP}\\"
         csvFolder = f"{rootFolder}{machineIP}\\CSV\\"
@@ -503,8 +500,8 @@ def OpenConnection():
         Single() if run is False else None
         run = True
         exchange = True
-    except Exception as excConnection:
-        logging.error("Open connection error:", exc_info=True)
+    except Exception as excConnect:
+        logging.error("Open connection error:", excConnect, exc_info=True)
         ConnectionErrorWindow() if failConnection is False else None
         return
 
@@ -513,6 +510,8 @@ def Single():
     try:
         threadModbus.start()
         threadPlot.start()
+        threadHistory.start()
+        threadRuntime.start()
     except RuntimeError:
         pass
     History()
@@ -521,16 +520,6 @@ def Single():
     GetPeriod()
     GlobalStatus()
     UpdateList()
-
-
-def Runtime():
-    global transferComplete, convertComplete
-    transferComplete = False
-    convertComplete = False
-    while transferComplete is False:
-        DataUpdate()
-    while convertComplete is False:
-        DataConvert()
 
 
 def UpdateList():
@@ -556,69 +545,79 @@ def UpdateList():
 
 
 def ModbusTCP():
+
+    def Read(address, quantity):
+        global master
+        if isinstance(master, modbus_tcp.TcpMaster):
+            output = master.execute(1, communicate.READ_INPUT_REGISTERS,
+                                    starting_address=address, quantity_of_x=quantity)
+            return output
+
+    def Write(address, value):
+        global master
+        if isinstance(master, modbus_tcp.TcpMaster):
+            master.execute(1, communicate.WRITE_SINGLE_REGISTER,
+                           starting_address=address, output_value=value)
+
     global panelIP, panelDate, currentDate, currentDateDot, panelTime, currentTime, filename, picname, \
         failConnection, failDevice, machineIP, connection, exchange, temperatureCurrent, temperatureSet, \
         humidityCurrent, humiditySet, modeIndex, statusIndex, version, tmin, tmax, master, \
         temperatureChange, humidityChange, statusChange, temperatureNew, humidityNew, statusNew
-    while True:
-        if exchange:
-            try:
-                master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
-                master.set_timeout(8.0)
+    while exchange:
+        try:
+            master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
+            master.set_timeout(8.0)
 
-                getSys = master.execute(1, communicate.READ_INPUT_REGISTERS, 10099, 10)
-                getTempCur = master.execute(1, communicate.READ_INPUT_REGISTERS, 10109, 1)
-                getTempSet = master.execute(1, communicate.READ_INPUT_REGISTERS, 10110, 1)
-                getHumCur = master.execute(1, communicate.READ_INPUT_REGISTERS, 10111, 1)
-                getHumSet = master.execute(1, communicate.READ_INPUT_REGISTERS, 10112, 1)
-                getStatus = master.execute(1, communicate.READ_INPUT_REGISTERS, 10115, 1)
-                getMode = master.execute(1, communicate.READ_INPUT_REGISTERS, 10114, 1)
-                getVersion = master.execute(1, communicate.READ_INPUT_REGISTERS, 10116, 1)
-                getTmin = master.execute(1, communicate.READ_INPUT_REGISTERS, 10117, 1)
-                getTmax = master.execute(1, communicate.READ_INPUT_REGISTERS, 10118, 1)
+            getSys = Read(10099, 10)
+            getTempCur = Read(10109, 1)
+            getTempSet = Read(10110, 1)
+            getHumCur = Read(10111, 1)
+            getHumSet = Read(10112, 1)
+            getStatus = Read(10115, 1)
+            getMode = Read(10114, 1)
+            getVersion = Read(10116, 1)
+            getTmin = Read(10117, 1)
+            getTmax = Read(10118, 1)
 
-                panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
-                connection = panelIP == machineIP
-                panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
-                panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
-                currentDate = f"{getSys[4]:02}/{getSys[5]:02}/{getSys[6]}"
-                currentDateDot = f"{getSys[4]:02}.{getSys[5]:02}.{getSys[6]}"
-                currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
-                filename = f"{getSys[6]:04}{getSys[5]:02}{getSys[4]:02}"
-                picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
-                temperatureCurrent = (getTempCur[0] - 2**16) / 10 if getTempCur[0] > 2**15 else getTempCur[0] / 10
-                temperatureSet = (getTempSet[0] - 2**16) / 10 if getTempSet[0] > 2**15 else getTempSet[0] / 10
-                humidityCurrent = int(getHumCur[0] / 10)
-                humiditySet = int(getHumSet[0])
-                statusIndex = int(getStatus[0])
-                modeIndex = int(getMode[0])
-                version = int(getVersion[0])
-                tmin = int(getTmin[0]) - 2**16 if getTmin[0] > 2**15 else int(getTmin[0])
-                tmax = int(getTmax[0]) - 2**16 if getTmax[0] > 2**15 else int(getTmax[0])
+            panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
+            connection = panelIP == machineIP
+            panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
+            panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
+            currentDate = f"{getSys[4]:02}/{getSys[5]:02}/{getSys[6]}"
+            currentDateDot = f"{getSys[4]:02}.{getSys[5]:02}.{getSys[6]}"
+            currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
+            filename = f"{getSys[6]:04}{getSys[5]:02}{getSys[4]:02}"
+            picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
+            temperatureCurrent = (getTempCur[0] - 2**16) / 10 if getTempCur[0] > 2**15 else getTempCur[0] / 10
+            temperatureSet = (getTempSet[0] - 2**16) / 10 if getTempSet[0] > 2**15 else getTempSet[0] / 10
+            humidityCurrent = int(getHumCur[0] / 10)
+            humiditySet = int(getHumSet[0])
+            statusIndex = int(getStatus[0])
+            modeIndex = int(getMode[0])
+            version = int(getVersion[0])
+            tmin = int(getTmin[0]) - 2**16 if getTmin[0] > 2**15 else int(getTmin[0])
+            tmax = int(getTmax[0]) - 2**16 if getTmax[0] > 2**15 else int(getTmax[0])
 
-                if temperatureChange:
-                    record = 3
-                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10120, output_value=temperatureNew)
-                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10119, output_value=record)
-                    temperatureChange = False
+            if temperatureChange:
+                Write(10120, value=temperatureNew)
+                Write(10119, 3)
+                temperatureChange = False
 
-                if humidityChange:
-                    record = 5
-                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10121, output_value=humidityNew)
-                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10119, output_value=record)
-                    humidityChange = False
+            if humidityChange:
+                Write(10121, value=humidityNew)
+                Write(10119, 5)
+                humidityChange = False
 
-                if statusChange:
-                    record = 9
-                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10122, output_value=statusNew)
-                    master.execute(1, communicate.WRITE_SINGLE_REGISTER, 10119, output_value=record)
-                    statusChange = False
+            if statusChange:
+                Write(10122, value=statusNew)
+                Write(10119, 9)
+                statusChange = False
 
-            except TimeoutError:
-                ConnectionErrorWindow() if failConnection else None
-            except Exception as excModbus:
-                logging.error("Modbus error:", excModbus, exc_info=True)
-                ConnectionErrorWindow() if failConnection else None
+        except TimeoutError:
+            ConnectionErrorWindow() if failConnection else None
+        except Exception as excModbus:
+            logging.error("Modbus error:", excModbus, exc_info=True)
+            ConnectionErrorWindow() if failConnection else None
         time.sleep(1)
 
 
@@ -627,25 +626,24 @@ def AccessToFile(file):
     try:
         with open(os.path.join(sourceFolder, file), "r") as ff:
             return True
-    except Exception as excHost:
+    except Exception as excFile:
+        logging.error("File is inaccessible", excFile, exc_info=True)
         return False
 
 
 def DownloadFile(remotefile):
-    global sourceFolder, failConnection, transferComplete, downloadSuccessfully
+    global sourceFolder
     try:
-        localFile = os.path.join(sourceFolder, remotefile)
-        with open(localFile, "wb") as file:
+        with open(os.path.join(sourceFolder, remotefile), "wb") as file:
             ftp.retrbinary("RETR %s" % remotefile, file.write) if isinstance(ftp, ftplib.FTP) else None
-    except Exception:
-        logging.error("File download error:", exc_info=True)
-        ConnectionErrorWindow() if failConnection else None
+    except Exception as excDownload:
+        logging.error("File download error:", excDownload, exc_info=True)
+        return False
     else:
-        downloadSuccessfully = True
+        return True
 
 
 def ConvertFile(command):
-    global convertSuccessfully
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startupinfo.wShowWindow = subprocess.SW_HIDE
@@ -656,82 +654,93 @@ def ConvertFile(command):
         process.wait()
         if process.returncode != 0:
             pass
-    except Exception as excProcess:
-        logging.error("File convertion error:", exc_info=True)
+    except Exception as excConvert:
+        logging.error("File convertion error:", excConvert, exc_info=True)
+        return False
     else:
-        convertSuccessfully = True
+        return True
 
 
 def History():
-    global files, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice, \
-        downloadSuccessfully, convertSuccessfully
+    global historyFiles, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
     history = False
-    while history is False:
-        try:
-            for sourceFile in files[:-1]:
-                if not os.path.isfile(os.path.join(sourceFolder, sourceFile)):
-                    downloadSuccessfully = False
-                    while downloadSuccessfully is False:
-                        DownloadFile(sourceFile)
+    while True:
+        if history is False:
+            try:
+                for sourceFile in historyFiles[:-1]:
+                    if not os.path.isfile(os.path.join(sourceFolder, sourceFile)):
+                        while True:
+                            if DownloadFile(sourceFile):
+                                break
+                            time.sleep(1)
 
-            for sourceFile in files[:-1]:
-                csvFile = f"{sourceFile[:8]}.csv"
-                xlsFile = f"{sourceFile[:8]}.xls"
-                csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, sourceFile),
-                              os.path.join(csvFolder, csvFile)]
-                xlsconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, sourceFile),
-                              os.path.join(xlsFolder, xlsFile)]
-                if AccessToFile(sourceFile):
-                    convertSuccessfully = False
-                    while convertSuccessfully is False:
-                        ConvertFile(csvconvert)
-                        time.sleep(1)
-                    convertSuccessfully = False
-                    while convertSuccessfully is False:
-                        ConvertFile(xlsconvert)
-                        time.sleep(1)
-            history = True
-        except Exception:
-            logging.error("History synchronize error:", exc_info=True)
-            ConnectionErrorWindow() if failConnection is False else None
+                for sourceFile in historyFiles[:-1]:
+                    csvFile = f"{sourceFile[:8]}.csv"
+                    xlsFile = f"{sourceFile[:8]}.xls"
+                    csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, sourceFile),
+                                  os.path.join(csvFolder, csvFile)]
+                    xlsconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, sourceFile),
+                                  os.path.join(xlsFolder, xlsFile)]
+                    if AccessToFile(sourceFile):
+                        if not os.path.isfile(os.path.join(csvFolder, csvFile)):
+                            while True:
+                                if ConvertFile(csvconvert):
+                                    break
+                                time.sleep(1)
+                        if not os.path.isfile(os.path.join(xlsFolder, xlsFile)):
+                            while True:
+                                if ConvertFile(xlsconvert):
+                                    break
+                                time.sleep(1)
+            except Exception as excHistory:
+                logging.error("History synchronize error:", excHistory, exc_info=True)
+                ConnectionErrorWindow() if failConnection is False else None
+            else:
+                history = True
+            time.sleep(10)
         time.sleep(1)
 
 
-def DataUpdate():
-    global failConnection, currentDate, transferComplete, downloadSuccessfully
-    try:
-        remoteFile = f"{currentDate}.dtl"
-        downloadSuccessfully = False
-        while downloadSuccessfully is False:
-            DownloadFile(remoteFile)
-    except Exception as excData:
-        logging.error("Data update failed:", exc_info=True)
-        ConnectionErrorWindow() if failConnection else None
-    else:
-        transferComplete = True
-
-
-def DataConvert():
-    global sourceFolder, csvFolder, historysync, currentDate, convertComplete
-    try:
+def Runtime():
+    global currentDate, updateData, actualData, xlsNeed
+    while True:
         currentFile = f"{currentDate}.dtl"
         csvFile = f"{currentDate}.csv"
-        csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile),
-                      os.path.join(csvFolder, csvFile)]
-        if AccessToFile(currentFile):
-            ConvertFile(csvconvert)
-    except Exception:
-        logging.error("Data conversion error:", exc_info=True)
-    else:
-        convertComplete = True
+        xlsFile = f"{currentDate}.xls"
+        if updateData:
+            try:
+                csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile),
+                              os.path.join(csvFolder, csvFile)]
+                xlsconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile),
+                              os.path.join(xlsFolder, xlsFile)]
+                while True:
+                    if DownloadFile(currentFile):
+                        break
+                    time.sleep(1)
+                if AccessToFile(currentFile):
+                    while True:
+                        with semaphore:
+                            if ConvertFile(csvconvert):
+                                break
+                        time.sleep(1)
+                        if xlsNeed:
+                            if ConvertFile(xlsconvert):
+                                break
+                            time.sleep(1)
+                            xlsNeed = False
+            except Exception as excRuntime:
+                logging.error("Runtime failed:", excRuntime, exc_info=True)
+            else:
+                updateData = False
+                actualData = False
+        time.sleep(1)
 
 
 def UserControl():
 
     def PeriodIsChanged(event):
-        global baseData
-        Runtime()
-        baseData = False
+        global updateData
+        updateData = True
 
     global graphLabels, graphPeriods, graphDefault, currentMachine, listIP, machinesList, machineIP, machineName
     graphDefault = StringVar(value=graphLabels[0])
@@ -763,7 +772,7 @@ def GetPeriod():
         onlinePlot = not onlinePlot
 
     global showSlice, sliceActive, buttonEdit, buttonOnline, onlinePlot, showButton
-    choice = graphLabels.index(graphDefault.get())
+    choice = graphLabels.index(graphDefault.get()) if isinstance(graphDefault, StringVar) else None
     if (choice == 6) & (showSlice is False):
         showSlice = True
         buttonEdit = ttk.Button(command=ShowSlice, style="TButton", text="Изменить диапазон")
@@ -984,13 +993,13 @@ def Plot():
             frameData = pandas.concat([frameData, frameRecord], ignore_index=True)
 
         global csvFolder, frameData, frameCurrent, frameColumns, timeNow, timeDif, fileList, fileMain, \
-            frameDataFrom, frameDataTo, baseData, timeBegin
-        chosenTime = graphPeriods[graphLabels.index(graphDefault.get())]
+            frameDataFrom, frameDataTo, actualData, timeBegin
+        chosenTime = graphPeriods[graphLabels.index(graphDefault.get())] if isinstance(graphDefault, StringVar) else None
         try:
             fileList = sorted(os.listdir(csvFolder))
             fileMain = os.path.join(csvFolder, fileList[-1])
-        except Exception as excFile:
-            logging.error("File not found:", exc_info=True)
+        except Exception as excFilelist:
+            logging.error("File not found:", excFilelist, exc_info=True)
             PlotError(True)
         else:
             if currentTime and chosenTime:
@@ -998,45 +1007,50 @@ def Plot():
                     timeNow = datetime.strptime(currentTime, "%H:%M:%S")
                     timeDif = datetime.strptime(chosenTime, "%H:%M:%S")
                 except Exception as excTime:
-                    logging.error("Time read error:", exc_info=True)
+                    logging.error("1-day time read error:", excTime, exc_info=True)
                     PlotError(True)
                 else:
                     if (timeNow - timeDif).days == 0:
-                        timeBegin = str(datetime.strptime(str(timeNow - timeDif), "%H:%M:%S").time())
-                        try:
-                            if baseData is False:
-                                frameData = pandas.read_csv(fileMain, sep=",", header=0)
-                                baseData = True
+                        if updateData is False:
+                            timeBegin = str(datetime.strptime(str(timeNow - timeDif), "%H:%M:%S").time())
+                            try:
+                                if actualData is False:
+                                    with semaphore:
+                                        frameData = pandas.read_csv(fileMain, sep=",", header=0)
+                                    actualData = True
+                                else:
+                                    Filling()
+                            except Exception as excCSV:
+                                logging.error("Error reading CSV file:", excCSV, exc_info=True)
+                                PlotError(True)
                             else:
-                                Filling()
-                        except Exception as ExcRead:
-                            logging.error("Error reading CSV file:", exc_info=True)
-                            PlotError(True)
-                        else:
-                            frameData = pandas.DataFrame(frameData.loc[frameData["Time"] >= timeBegin, frameColumns])
-                            if ValidCheck(frameData) & frameData.empty is False:
-                                frameCurrent = frameData
+                                frameData = pandas.DataFrame(frameData.loc[frameData["Time"] >= timeBegin, frameColumns])
+                                if ValidCheck(frameData) & frameData.empty is False:
+                                    frameCurrent = frameData
                     else:
-                        fileFrom = os.path.join(csvFolder, fileList[-2])
-                        fileTo = os.path.join(csvFolder, fileList[-1])
-                        timeBegin = str(((timeNow - timeDif) +
-                                         datetime.strptime("23:59:59", "%H:%M:%S")).time())
-                        try:
-                            if baseData is False:
-                                frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
-                                frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
+                        if updateData is False:
+                            fileFrom = os.path.join(csvFolder, fileList[-2])
+                            fileTo = os.path.join(csvFolder, fileList[-1])
+                            timeBegin = str(((timeNow - timeDif) +
+                                            datetime.strptime("23:59:59", "%H:%M:%S")).time())
+                            try:
+                                if actualData is False:
+                                    with semaphore:
+                                        frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
+                                        frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
+                                    actualData = True
+                                else:
+                                    Filling()
+                            except Exception as excCSVs:
+                                logging.error("Error reading two CSV files:", excCSVs, exc_info=True)
+                                PlotError(True)
                             else:
-                                Filling()
-                        except Exception as ExcRead:
-                            logging.error("Error reading two CSV files:", exc_info=True)
-                            PlotError(True)
-                        else:
-                            frameDataFrom = pandas.DataFrame(frameDataFrom.loc
-                                                             [(frameDataFrom["Time"] >= timeBegin), frameColumns])
-                            frameDataTo = pandas.DataFrame(frameDataTo)
-                            if (ValidCheck(frameDataFrom) & ValidCheck(frameDataTo) &
-                                    frameDataFrom.empty is False & frameDataTo.empty is False):
-                                frameCurrent = pandas.concat([frameDataFrom, frameDataTo], ignore_index=True)
+                                frameDataFrom = pandas.DataFrame(frameDataFrom.loc
+                                                                 [(frameDataFrom["Time"] >= timeBegin), frameColumns])
+                                frameDataTo = pandas.DataFrame(frameDataTo)
+                                if (ValidCheck(frameDataFrom) & ValidCheck(frameDataTo) &
+                                        frameDataFrom.empty is False & frameDataTo.empty is False):
+                                    frameCurrent = pandas.concat([frameDataFrom, frameDataTo], ignore_index=True)
             else:
                 logging.error("Bad time data")
                 PlotError(True)
@@ -1075,14 +1089,12 @@ def Plot():
                 frameCurrent["Datetime"] = pandas.to_datetime(frameCurrent["Date"] + " " + frameCurrent["Time"],
                                                               dayfirst=True)
                 frameCurrent = pandas.DataFrame(frameCurrent[combColumns])
-            except Exception as excDTconvert:
-                logging.error("Datetime convert failed:", exc_info=True)
+            except Exception as excDatetime:
+                logging.error("Datetime convert failed:", excDatetime, exc_info=True)
 
-    global sliceActive, baseMode, onlinePlot, humidity, csvFolder, frameData, frameCurrent, frameColumns, draw, \
-        frameDataFrom, frameDataTo, graphTemp, baseData, graphHum
+    global sliceActive, baseMode, onlinePlot, humidity, frameCurrent, draw, graphTemp, graphHum
     while True:
         if onlinePlot is True:
-            semaphore.acquire()
             try:
                 if not sliceActive:
                     NotSlice()
@@ -1090,9 +1102,7 @@ def Plot():
                     IsSlice()
             except Exception as excFrame:
                 PlotError(True)
-                logging.error("Data block error:", exc_info=True)
-            finally:
-                semaphore.release()
+                logging.error("Data block error:", excFrame, exc_info=True)
             try:
                 figure.clear()
                 locX = matplotlib.ticker.LinearLocator(18)
@@ -1102,8 +1112,8 @@ def Plot():
                 graphTemp.xaxis.set_major_formatter(formX)
                 graphTemp.set_facecolor(bgLoc)
                 graphTemp.set_title(machineName, color="yellow")
-            except Exception as excPlot:
-                logging.error("Subplot error")
+            except Exception as excSubplot:
+                logging.error("Subplot error:", excSubplot, exc_info=True)
             try:
                 DatetimeConvert()
                 graphTemp.plot(frameCurrent["Datetime"], frameCurrent["TemperatureCurrent"], "-w",
@@ -1127,11 +1137,9 @@ def Plot():
                 canvasGraph.draw()
             except Exception as excPlot:
                 PlotError(True)
-                logging.error("Plot block error:", exc_info=True)
+                logging.error("Plot error:", excPlot, exc_info=True)
             else:
                 PlotError(False)
-            finally:
-                semaphore.release()
             if draw is False:
                 canvasGraph.get_tk_widget().place(x=20, y=290)
                 draw = True
@@ -1156,7 +1164,9 @@ def OpenFigure():
 
 
 def OpenHistory():
-    History()
+    global updateData, xlsNeed
+    updateData = True
+    xlsNeed = True
     if os.path.exists(xlsFolder):
         os.system(f"explorer.exe {xlsFolder}")
 
@@ -1342,6 +1352,8 @@ declineImage = PhotoImage(file=f"{iconsFolder}decline.png")
 
 threadModbus = threading.Thread(target=ModbusTCP, daemon=True, name="modbus")
 threadPlot = threading.Thread(target=Plot, daemon=True, name="plot")
+threadHistory = threading.Thread(target=History, daemon=True, name="history")
+threadRuntime = threading.Thread(target=Runtime, daemon=True, name="runtime")
 semaphore = threading.Semaphore(1)
 
 logoLabel = Label(font=("Arial", 10, "bold"), fg=fgLab, bg=bgGlob)

@@ -496,14 +496,17 @@ def OpenConnection():
         csvFolder = f"{rootFolder}{machineIP}\\CSV\\"
         xlsFolder = f"{rootFolder}{machineIP}\\XLS\\"
         os.mkdir(sourceFolder) if os.path.exists(sourceFolder) is False else None
-
-        Single() if run is False else None
-        run = True
-        exchange = True
+    except TimeoutError:
+        logging.error("Connection timed out:", exc_info=True)
+        ConnectionErrorWindow() if failConnection is False else None
     except Exception as excConnect:
         logging.error("Open connection error:", excConnect, exc_info=True)
         ConnectionErrorWindow() if failConnection is False else None
         return
+    else:
+        Single() if run is False else None
+        run = True
+        exchange = True
 
 
 def Single():
@@ -514,7 +517,6 @@ def Single():
         threadRuntime.start()
     except RuntimeError:
         pass
-    History()
     LabelsShow()
     UserControl()
     GetPeriod()
@@ -562,62 +564,63 @@ def ModbusTCP():
     global panelIP, panelDate, currentDate, currentDateDot, panelTime, currentTime, filename, picname, \
         failConnection, failDevice, machineIP, connection, exchange, temperatureCurrent, temperatureSet, \
         humidityCurrent, humiditySet, modeIndex, statusIndex, version, tmin, tmax, master, \
-        temperatureChange, humidityChange, statusChange, temperatureNew, humidityNew, statusNew
-    while exchange:
-        try:
-            master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
-            master.set_timeout(8.0)
+        temperatureChange, humidityChange, statusChange, temperatureNew, humidityNew, statusNew, run
+    while True:
+        if exchange:
+            try:
+                master = modbus_tcp.TcpMaster(host=machineIP, port=502, timeout_in_sec=8)
+                master.set_timeout(8.0)
 
-            getSys = Read(10099, 10)
-            getTempCur = Read(10109, 1)
-            getTempSet = Read(10110, 1)
-            getHumCur = Read(10111, 1)
-            getHumSet = Read(10112, 1)
-            getStatus = Read(10115, 1)
-            getMode = Read(10114, 1)
-            getVersion = Read(10116, 1)
-            getTmin = Read(10117, 1)
-            getTmax = Read(10118, 1)
+                getSys = Read(10099, 10)
+                getTempCur = Read(10109, 1)
+                getTempSet = Read(10110, 1)
+                getHumCur = Read(10111, 1)
+                getHumSet = Read(10112, 1)
+                getStatus = Read(10115, 1)
+                getMode = Read(10114, 1)
+                getVersion = Read(10116, 1)
+                getTmin = Read(10117, 1)
+                getTmax = Read(10118, 1)
 
-            panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
-            connection = panelIP == machineIP
-            panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
-            panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
-            currentDate = f"{getSys[4]:02}/{getSys[5]:02}/{getSys[6]}"
-            currentDateDot = f"{getSys[4]:02}.{getSys[5]:02}.{getSys[6]}"
-            currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
-            filename = f"{getSys[6]:04}{getSys[5]:02}{getSys[4]:02}"
-            picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
-            temperatureCurrent = (getTempCur[0] - 2**16) / 10 if getTempCur[0] > 2**15 else getTempCur[0] / 10
-            temperatureSet = (getTempSet[0] - 2**16) / 10 if getTempSet[0] > 2**15 else getTempSet[0] / 10
-            humidityCurrent = int(getHumCur[0] / 10)
-            humiditySet = int(getHumSet[0])
-            statusIndex = int(getStatus[0])
-            modeIndex = int(getMode[0])
-            version = int(getVersion[0])
-            tmin = int(getTmin[0]) - 2**16 if getTmin[0] > 2**15 else int(getTmin[0])
-            tmax = int(getTmax[0]) - 2**16 if getTmax[0] > 2**15 else int(getTmax[0])
+                panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
+                connection = panelIP == machineIP
+                panelDate = f"{getSys[4]:02} / {getSys[5]:02} / {getSys[6]}"
+                panelTime = f"{getSys[7]:02} : {getSys[8]:02} : {getSys[9]:02}"
+                currentDate = f"{getSys[4]:02}/{getSys[5]:02}/{getSys[6]}"
+                currentDateDot = f"{getSys[4]:02}.{getSys[5]:02}.{getSys[6]}"
+                currentTime = f"{getSys[7]:02}:{getSys[8]:02}:{getSys[9]:02}"
+                filename = f"{getSys[6]:04}{getSys[5]:02}{getSys[4]:02}"
+                picname = f"{getSys[6]}{getSys[5]:02}{getSys[4]:02}_{getSys[7]:02}{getSys[8]:02}{getSys[9]:02}"
+                temperatureCurrent = (getTempCur[0] - 2**16) / 10 if getTempCur[0] > 2**15 else getTempCur[0] / 10
+                temperatureSet = (getTempSet[0] - 2**16) / 10 if getTempSet[0] > 2**15 else getTempSet[0] / 10
+                humidityCurrent = int(getHumCur[0] / 10)
+                humiditySet = int(getHumSet[0])
+                statusIndex = int(getStatus[0])
+                modeIndex = int(getMode[0])
+                version = int(getVersion[0])
+                tmin = int(getTmin[0]) - 2**16 if getTmin[0] > 2**15 else int(getTmin[0])
+                tmax = int(getTmax[0]) - 2**16 if getTmax[0] > 2**15 else int(getTmax[0])
 
-            if temperatureChange:
-                Write(10120, value=temperatureNew)
-                Write(10119, 3)
-                temperatureChange = False
+                if temperatureChange:
+                    Write(10120, value=temperatureNew)
+                    Write(10119, 3)
+                    temperatureChange = False
 
-            if humidityChange:
-                Write(10121, value=humidityNew)
-                Write(10119, 5)
-                humidityChange = False
+                if humidityChange:
+                    Write(10121, value=humidityNew)
+                    Write(10119, 5)
+                    humidityChange = False
 
-            if statusChange:
-                Write(10122, value=statusNew)
-                Write(10119, 9)
-                statusChange = False
+                if statusChange:
+                    Write(10122, value=statusNew)
+                    Write(10119, 9)
+                    statusChange = False
 
-        except TimeoutError:
-            ConnectionErrorWindow() if failConnection else None
-        except Exception as excModbus:
-            logging.error("Modbus error:", excModbus, exc_info=True)
-            ConnectionErrorWindow() if failConnection else None
+            except TimeoutError:
+                ConnectionErrorWindow() if failConnection else None
+            except Exception as excModbus:
+                logging.error("Modbus error:", excModbus, exc_info=True)
+                ConnectionErrorWindow() if failConnection else None
         time.sleep(1)
 
 
@@ -665,7 +668,7 @@ def History():
     global historyFiles, sourceFolder, csvFolder, xlsFolder, failConnection, failDevice
     history = False
     while True:
-        if history is False:
+        if (history is False) & (len(historyFiles) > 1):
             try:
                 for sourceFile in historyFiles[:-1]:
                     if not os.path.isfile(os.path.join(sourceFolder, sourceFile)):
@@ -702,37 +705,38 @@ def History():
 
 
 def Runtime():
-    global currentDate, updateData, actualData, xlsNeed
+    global filename, updateData, actualData, xlsNeed
     while True:
-        currentFile = f"{currentDate}.dtl"
-        csvFile = f"{currentDate}.csv"
-        xlsFile = f"{currentDate}.xls"
-        if updateData:
-            try:
-                csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile),
-                              os.path.join(csvFolder, csvFile)]
-                xlsconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile),
-                              os.path.join(xlsFolder, xlsFile)]
-                while True:
-                    if DownloadFile(currentFile):
-                        break
-                    time.sleep(1)
-                if AccessToFile(currentFile):
+        if filename:
+            if updateData:
+                currentFile = f"{filename}.dtl"
+                csvFile = f"{filename}.csv"
+                xlsFile = f"{filename}.xls"
+                try:
+                    csvconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile),
+                                  os.path.join(csvFolder, csvFile)]
+                    xlsconvert = [converter, '/b0', '/t0', os.path.join(sourceFolder, currentFile),
+                                  os.path.join(xlsFolder, xlsFile)]
                     while True:
-                        with semaphore:
-                            if ConvertFile(csvconvert):
-                                break
+                        if DownloadFile(currentFile):
+                            break
                         time.sleep(1)
-                        if xlsNeed:
-                            if ConvertFile(xlsconvert):
-                                break
+                    if AccessToFile(currentFile):
+                        while True:
+                            with semaphore:
+                                if ConvertFile(csvconvert):
+                                    break
                             time.sleep(1)
-                            xlsNeed = False
-            except Exception as excRuntime:
-                logging.error("Runtime failed:", excRuntime, exc_info=True)
-            else:
-                updateData = False
-                actualData = False
+                            if xlsNeed:
+                                if ConvertFile(xlsconvert):
+                                    break
+                                time.sleep(1)
+                                xlsNeed = False
+                except Exception as excRuntime:
+                    logging.error("Runtime failed:", excRuntime, exc_info=True)
+                else:
+                    updateData = False
+                    actualData = False
         time.sleep(1)
 
 
@@ -969,6 +973,7 @@ def Plot():
         try:
             frameCheck["Time"] = pandas.to_datetime(frame["Time"], format="%H:%M:%S")
         except Exception as excFrame:
+            logging.error("Frame is not valid", excFrame)
             correct = False
         if frame.isnull().values.any():
             correct = False

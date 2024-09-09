@@ -23,7 +23,7 @@ import pandas
 import logging
 
 
-xLabelPos, xValuePos, yPos = 20, 190, 85
+xLabelPos, xValuePos, yPos = 10, 180, 85
 fgLab, fgVal, bgGlob, bgLoc = "white", "yellow", "#2B0542", "#510D70"
 baseMode = "Temperature"
 baseStatus = "Stop"
@@ -33,6 +33,7 @@ status = ("НЕТ СВЯЗИ", "АВАРИЯ", "РАБОТА", "ОСТАНОВ")
 mode = ("НЕТ СВЯЗИ", "НАСТРОЙКА", "ТЕРМО", "ВЛАГА")
 cycleTemp = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАГРЕВ", "ОХЛАЖДЕНИЕ")
 cycleHum = ("НЕ АКТИВЕН", "ПОДДЕРЖАНИЕ", "НАСЫЩЕНИЕ", "ОСУШЕНИЕ")
+cycleTech = ("НЕ АКТИВЕН", "ВЫХОД НА УСТАВКУ", "ПОДДЕРЖАНИЕ")
 
 graphLabels = ["5 минут", "15 минут", "30 минут", "1 час", "2 часа", "4 часа", "<Настроить>"]
 graphPeriods = ["00:05:00", "00:15:00", "00:30:00", "01:00:00", "02:00:00", "04:00:00", "00:05:00"]
@@ -77,6 +78,8 @@ statusIndex: int
 modeIndex: int
 cycleTempIndex: int
 cycleHumIndex: int
+cycleTechIndex: int
+techTimer: int
 
 localIP, panelIP, panelDate, currentDate, currentDateDot, panelTime, currentTime = "", "", "", "", "", "", ""
 filename, picname, machineIP, machineName, lastlog = "", "", "", "", ""
@@ -101,6 +104,9 @@ humidityCurrent = 0
 humiditySet = 0
 cycleTempIndex = 0
 cycleHumIndex = 0
+cycleTechIndex = 0
+techTimer = 0
+version = 0
 
 
 def ObjectsPlace():
@@ -110,22 +116,22 @@ def ObjectsPlace():
     armIPLabel.place(x=350, y=15)
     panelIPLabel.place(x=350, y=35)
     statusLabel.place(x=xLabelPos, y=yPos + 0, width=150)
-    statusValue.place(x=xValuePos, y=yPos + 0, width=100)
-    modeLabel.place(x=xLabelPos, y=yPos + 20, width=150)
-    modeValue.place(x=xValuePos, y=yPos + 20, width=100)
-    tempCurLabel.place(x=xLabelPos, y=yPos + 50, width=150)
-    tempCurValue.place(x=xValuePos, y=yPos + 50, width=100)
-    tempSetLabel.place(x=xLabelPos, y=yPos + 67, width=150)
-    tempSetValue.place(x=xValuePos, y=yPos + 67, width=100)
-    tempCycleLabel.place(x=xLabelPos, y=yPos + 84, width=150)
-    tempCycleValue.place(x=xValuePos, y=yPos + 84, width=100)
-    humCurLabel.place(x=xLabelPos, y=yPos + 114, width=150)
-    humCurValue.place(x=xValuePos, y=yPos + 114, width=100)
-    humSetLabel.place(x=xLabelPos, y=yPos + 131, width=150)
-    humSetValue.place(x=xValuePos, y=yPos + 131, width=100)
-    humCycleLabel.place(x=xLabelPos, y=yPos + 148, width=150)
-    humCycleValue.place(x=xValuePos, y=yPos + 148, width=100)
+    statusValue.place(x=xValuePos, y=yPos + 0, width=120)
+    modeLabel.place(x=xLabelPos, y=yPos + 15, width=150)
+    modeValue.place(x=xValuePos, y=yPos + 15, width=120)
+    tempCurLabel.place(x=xLabelPos, y=yPos + 45, width=150)
+    tempCurValue.place(x=xValuePos, y=yPos + 45, width=120)
+    tempSetLabel.place(x=xLabelPos, y=yPos + 60, width=150)
+    tempSetValue.place(x=xValuePos, y=yPos + 60, width=120)
+    humCurLabel.place(x=xLabelPos, y=yPos + 90, width=150)
+    humCurValue.place(x=xValuePos, y=yPos + 90, width=120)
+    humSetLabel.place(x=xLabelPos, y=yPos + 105, width=150)
+    humSetValue.place(x=xValuePos, y=yPos + 105, width=120)
     labelPeriods.place(x=670, y=90)
+    cycleTechLabel.place(x=xLabelPos, y=yPos + 135, width=150)
+    cycleTechValue.place(x=xValuePos, y=yPos + 135, width=120)
+    timerTechLabel.place(x=xLabelPos, y=yPos + 150, width=150)
+    timerTechValue.place(x=xValuePos, y=yPos + 150, width=120)
 
 
 def LabelsShow():
@@ -142,15 +148,17 @@ def LabelsShow():
     tempCurValue["text"] = f"{temperatureCurrent} °C"
     tempSetLabel["text"] = "Уставка по температуре:"
     tempSetValue["text"] = f"{temperatureSet} °C"
-    tempCycleLabel["text"] = "Технологический цикл:"
-    tempCycleValue["text"] = cycleTemp[cycleTempIndex]
     humCurLabel["text"] = "Текущая влажность:"
-    humCurValue["text"] = f"{humidityCurrent} %"
+    humCurValue["text"] = f"{humidityCurrent} %" if version == 2 else "Н/Д"
     humSetLabel["text"] = "Уставка по влажности:"
-    humSetValue["text"] = f"{humiditySet} %"
-    humCycleLabel["text"] = "Технологический цикл:"
-    humCycleValue["text"] = cycleHum[cycleHumIndex]
+    humSetValue["text"] = f"{humiditySet} %" if version == 2 else "Н/Д"
     labelPeriods["text"] = "Диапазон отображения:"
+    cycleTechLabel["text"] = "Технологический цикл:"
+    cycleTechValue["text"] = cycleTech[cycleTechIndex]
+    timerTechLabel["text"] = "Время на режиме:"
+    timerTechLabel["fg"] = fgLab if techTimer > 0 else bgLoc
+    timerTechValue["text"] = f"{techTimer//100} час : {techTimer%100} мин"
+    timerTechValue["fg"] = fgVal if techTimer > 0 else bgLoc
 
     root.after(1000, LabelsShow)
 
@@ -208,17 +216,26 @@ def GlobalStatus():
                     HideGif("idleH")
 
     global baseStatus, baseMode, heat, cold, idleT, wet, dry, idleH, cycleTempIndex, cycleHumIndex, \
-        temperatureCurrent, temperatureSet, humidityCurrent, humiditySet
+        temperatureCurrent, temperatureSet, humidityCurrent, humiditySet, techTimer, cycleTechIndex
+
     baseStatus = "Run" if statusIndex == 2 else "Stop"
+
+    if techTimer > 0:
+        cycleTechIndex = 2
+    elif baseStatus == "Run":
+        cycleTechIndex = 1
+    else:
+        cycleTechIndex = 0
+
     if modeIndex == 2:
         baseMode = "Temperature"
-        humCurLabel["fg"] = humSetLabel["fg"] = humCycleLabel["fg"] = "dim gray"
-        humCurValue["fg"] = humSetValue["fg"] = humCycleValue["fg"] = "dim gray"
+        humCurLabel["fg"] = humSetLabel["fg"] = "dim gray"
+        humCurValue["fg"] = humSetValue["fg"] = "dim gray"
         buttonSetHum["state"] = "disabled"
     if modeIndex == 3:
         baseMode = "Humidity"
-        humCurLabel["fg"] = humSetLabel["fg"] = humCycleLabel["fg"] = fgLab
-        humCurValue["fg"] = humSetValue["fg"] = humCycleValue["fg"] = fgVal
+        humCurLabel["fg"] = humSetLabel["fg"] = fgLab
+        humCurValue["fg"] = humSetValue["fg"] = fgVal
         buttonSetHum["state"] = "normal"
     if (baseStatus == "Run") & (modeIndex >= 2):
         if temperatureCurrent <= (temperatureSet - 2):
@@ -353,8 +370,7 @@ def UpdateGif(ani, index=0):
                     index = 0
                 idleHumLabel.configure(image=framePic, borderwidth=0) if isinstance(idleHumLabel, Label) else None
         root.after(100, UpdateGif, ani, index)
-    except Exception as excGif:
-        logging.error("Visual status print error:", excGif, exc_info=True)
+    except Exception:
         return
 
 
@@ -566,7 +582,7 @@ def ModbusTCP():
     global panelIP, panelDate, currentDate, currentDateDot, panelTime, currentTime, filename, picname, \
         failConnection, failDevice, machineIP, connection, exchange, temperatureCurrent, temperatureSet, \
         humidityCurrent, humiditySet, modeIndex, statusIndex, version, tmin, tmax, master, \
-        temperatureChange, humidityChange, statusChange, temperatureNew, humidityNew, statusNew, run
+        temperatureChange, humidityChange, statusChange, temperatureNew, humidityNew, statusNew, run, techTimer
     while True:
         if exchange:
             try:
@@ -583,6 +599,7 @@ def ModbusTCP():
                 getVersion = Read(10116, 1)
                 getTmin = Read(10117, 1)
                 getTmax = Read(10118, 1)
+                getTimer = Read(10113, 1)
 
                 panelIP = f"{getSys[0]}.{getSys[1]}.{getSys[2]}.{getSys[3]}"
                 connection = panelIP == machineIP
@@ -602,6 +619,7 @@ def ModbusTCP():
                 version = int(getVersion[0])
                 tmin = int(getTmin[0]) - 2**16 if getTmin[0] > 2**15 else int(getTmin[0])
                 tmax = int(getTmax[0]) - 2**16 if getTmax[0] > 2**15 else int(getTmax[0])
+                techTimer = int(getTimer[0])
 
                 if temperatureChange:
                     Write(10120, value=temperatureNew)
@@ -1204,7 +1222,7 @@ def ChangeTemperature():
 
     frameTemp = tkinter.Frame(master=root, borderwidth=1, width=240, height=25, bg=bgLoc)
     frameTemp.place(x=360, y=204)
-    setTemp = InputBox(container=frameTemp, placeholder=f"Уставка от {tmin} до {tmax} °C", placeholder_color="dim gray",
+    setTemp = InputBox(container=frameTemp, placeholder=f"Уставка от {tmin} до +{tmax} °C", placeholder_color="dim gray",
                        input_type="number", justify="center")
     setTemp.place(x=30, y=1, width=180, height=22)
     ttk.Button(master=frameTemp, style="TButton", image=acceptImage, compound=TOP, command=Accept)\
@@ -1334,7 +1352,7 @@ os.remove(logfile) if os.path.isfile(logfile) else None
 logging.basicConfig(filename=logfile, level=logging.ERROR)
 
 root = Tk()
-root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.7.4")
+root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.7.5")
 root.geometry("1000x740")
 root.wm_geometry("+%d+%d" % (100, 100))
 root["bg"] = bgGlob
@@ -1384,15 +1402,15 @@ tempCurLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 tempCurValue = Label(fg=fgVal, bg=bgLoc)
 tempSetLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 tempSetValue = Label(fg=fgVal, bg=bgLoc)
-tempCycleLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
-tempCycleValue = Label(fg=fgVal, bg=bgLoc)
 humCurLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 humCurValue = Label(fg=fgVal, bg=bgLoc)
 humSetLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
 humSetValue = Label(fg=fgVal, bg=bgLoc)
-humCycleLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
-humCycleValue = Label(fg=fgVal, bg=bgLoc)
 labelPeriods = Label(anchor="w", fg=fgLab, bg=bgLoc)
+cycleTechLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
+cycleTechValue = Label(fg=fgVal, bg=bgLoc)
+timerTechLabel = Label(anchor="e", fg=fgLab, bg=bgLoc)
+timerTechValue = Label(fg=fgVal, bg=bgLoc)
 
 figure = Figure(figsize=(9.5, 4.2), dpi=100, facecolor=bgLoc)
 canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)

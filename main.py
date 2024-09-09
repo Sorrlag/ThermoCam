@@ -214,10 +214,12 @@ def GlobalStatus():
         baseMode = "Temperature"
         humCurLabel["fg"] = humSetLabel["fg"] = humCycleLabel["fg"] = "dim gray"
         humCurValue["fg"] = humSetValue["fg"] = humCycleValue["fg"] = "dim gray"
+        buttonSetHum["state"] = "disabled"
     if modeIndex == 3:
         baseMode = "Humidity"
         humCurLabel["fg"] = humSetLabel["fg"] = humCycleLabel["fg"] = fgLab
         humCurValue["fg"] = humSetValue["fg"] = humCycleValue["fg"] = fgVal
+        buttonSetHum["state"] = "normal"
     if (baseStatus == "Run") & (modeIndex >= 2):
         if temperatureCurrent <= (temperatureSet - 2):
             cycleTempIndex = 2
@@ -727,11 +729,12 @@ def Runtime():
                                 if ConvertFile(csvconvert):
                                     break
                             time.sleep(1)
-                            if xlsNeed:
+                        if xlsNeed:
+                            while True:
                                 if ConvertFile(xlsconvert):
+                                    xlsNeed = False
                                     break
                                 time.sleep(1)
-                                xlsNeed = False
                 except Exception as excRuntime:
                     logging.error("Runtime failed:", excRuntime, exc_info=True)
                 else:
@@ -772,8 +775,9 @@ def UserControl():
 def GetPeriod():
 
     def StartStopPlot():
-        global onlinePlot
-        onlinePlot = not onlinePlot
+        global onlinePlot, updateData
+        updateData = True if onlinePlot is False else None
+        onlinePlot ^= True
 
     global showSlice, sliceActive, buttonEdit, buttonOnline, onlinePlot, showButton
     choice = graphLabels.index(graphDefault.get()) if isinstance(graphDefault, StringVar) else None
@@ -785,10 +789,10 @@ def GetPeriod():
     if (choice != 6) & (showSlice is True):
         showSlice = False
         sliceActive = False
+        onlinePlot = True
         buttonEdit.destroy()
         HideSlice()
     if choice != 6:
-        onlinePlot = True
         if showButton is False:
             buttonOnline = ttk.Button(root, style="TButton", command=StartStopPlot)
             buttonOnline.place(x=670, y=120, width=300)
@@ -973,7 +977,7 @@ def Plot():
         try:
             frameCheck["Time"] = pandas.to_datetime(frame["Time"], format="%H:%M:%S")
         except Exception as excFrame:
-            logging.error("Frame is not valid", excFrame)
+            logging.error("Frame is not valid", excFrame, exc_info=True)
             correct = False
         if frame.isnull().values.any():
             correct = False
@@ -1015,11 +1019,14 @@ def Plot():
                     logging.error("1-day time read error:", excTime, exc_info=True)
                     PlotError(True)
                 else:
+                    # ONLINE - IF THE SAME DAY DIFFERENCE
                     if (timeNow - timeDif).days == 0:
                         if updateData is False:
+                            # IF CONVERTING FINISHED
                             timeBegin = str(datetime.strptime(str(timeNow - timeDif), "%H:%M:%S").time())
                             try:
                                 if actualData is False:
+                                    # IF ONLINE SLICE IS CHANGED
                                     with semaphore:
                                         frameData = pandas.read_csv(fileMain, sep=",", header=0)
                                     actualData = True
@@ -1033,13 +1040,16 @@ def Plot():
                                 if ValidCheck(frameData) & frameData.empty is False:
                                     frameCurrent = frameData
                     else:
+                        # ONLINE - IF TWO DAYS DIFFERENCE
                         if updateData is False:
+                            # IF CONVERTING FINISHED
                             fileFrom = os.path.join(csvFolder, fileList[-2])
                             fileTo = os.path.join(csvFolder, fileList[-1])
                             timeBegin = str(((timeNow - timeDif) +
                                             datetime.strptime("23:59:59", "%H:%M:%S")).time())
                             try:
                                 if actualData is False:
+                                    # IF ONLINE SLICE IS CHANGED
                                     with semaphore:
                                         frameDataFrom = pandas.read_csv(fileFrom, sep=",", header=0)
                                         frameDataTo = pandas.read_csv(fileTo, sep=",", header=0)
@@ -1099,12 +1109,13 @@ def Plot():
 
     global sliceActive, baseMode, onlinePlot, humidity, frameCurrent, draw, graphTemp, graphHum
     while True:
-        if onlinePlot is True:
+        if onlinePlot:
             try:
                 if not sliceActive:
                     NotSlice()
                 else:
                     IsSlice()
+                DatetimeConvert()
             except Exception as excFrame:
                 PlotError(True)
                 logging.error("Data block error:", excFrame, exc_info=True)
@@ -1120,7 +1131,6 @@ def Plot():
             except Exception as excSubplot:
                 logging.error("Subplot error:", excSubplot, exc_info=True)
             try:
-                DatetimeConvert()
                 graphTemp.plot(frameCurrent["Datetime"], frameCurrent["TemperatureCurrent"], "-w",
                                frameCurrent["Datetime"], frameCurrent["TemperatureSet"], "--c")
                 graphTemp.set_ylabel("Температура, °C", color="white")
@@ -1170,10 +1180,10 @@ def OpenFigure():
 
 def OpenHistory():
     global updateData, xlsNeed
+    os.mkdir(xlsFolder) if not os.path.exists(xlsFolder) else None
     updateData = True
     xlsNeed = True
-    if os.path.exists(xlsFolder):
-        os.system(f"explorer.exe {xlsFolder}")
+    os.system(f"explorer.exe {xlsFolder}")
 
 
 def ChangeTemperature():
@@ -1324,12 +1334,12 @@ os.remove(logfile) if os.path.isfile(logfile) else None
 logging.basicConfig(filename=logfile, level=logging.ERROR)
 
 root = Tk()
-root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.61")
+root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.7.4")
 root.geometry("1000x740")
 root.wm_geometry("+%d+%d" % (100, 100))
 root["bg"] = bgGlob
 root.resizable(False, False)
-icon = PhotoImage(file=f"{iconsFolder}icon.png")
+icon = PhotoImage(file=os.path.join(iconsFolder, "icon.png"))
 root.iconphoto(False, icon)
 root.option_add("*Font", "Helvetica 8")
 ttk.Style().configure(style=".", font="Helvetica 8")

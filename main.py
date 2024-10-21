@@ -71,6 +71,7 @@ humiditySet: int
 temperatureNew: int
 humidityNew: int
 statusNew: int
+modeNew: int
 version: int
 tmin: int
 tmax: int
@@ -88,7 +89,7 @@ sliceDateFrom, sliceDateTo, sliceTimeFrom, sliceTimeTo = "", "", "", ""
 sliceActive = sliceChange = showSlice = showError = showButton = False
 heat = cold = idleT = wet = dry = idleH = False
 connection = exchange = run = draw = failConnection = failDevice = onlinePlot = humidity = actualData = xlsNeed = False
-temperatureChange = humidityChange = statusChange = False
+temperatureChange = humidityChange = statusChange = modeChange = False
 updateData = True
 
 master, ftp, machinesList, saved = None, None, None, None
@@ -581,8 +582,8 @@ def ModbusTCP():
 
     global panelIP, panelDate, currentDate, currentDateDot, panelTime, currentTime, filename, picname, \
         failConnection, failDevice, machineIP, connection, exchange, temperatureCurrent, temperatureSet, \
-        humidityCurrent, humiditySet, modeIndex, statusIndex, version, tmin, tmax, master, \
-        temperatureChange, humidityChange, statusChange, temperatureNew, humidityNew, statusNew, run, techTimer
+        humidityCurrent, humiditySet, modeIndex, statusIndex, version, tmin, tmax, master, run, techTimer, \
+        temperatureChange, humidityChange, statusChange, modeChange, temperatureNew, humidityNew, statusNew, modeNew
     while True:
         if exchange:
             try:
@@ -635,6 +636,11 @@ def ModbusTCP():
                     Write(10122, value=statusNew)
                     Write(10119, 9)
                     statusChange = False
+
+                if modeChange:
+                    Write(10123, value=modeNew)
+                    Write(10119, 17)
+                    modeChange = False
 
             except TimeoutError:
                 ConnectionErrorWindow() if failConnection else None
@@ -778,7 +784,8 @@ def UserControl():
     buttonOpenFig.place(x=840, y=227, width=130)
     buttonRename.place(x=360, y=115, width=115)
     buttonAdd.place(x=485, y=115, width=115)
-    buttonStatus.place(x=360, y=155, width=240)
+    buttonStatus.place(x=360, y=155, width=115)
+    buttonMode.place(x=485, y=155, width=115)
     buttonSpeed.place(x=360, y=180, width=240)
     buttonSetTemp.place(x=360, y=205, width=240)
     buttonSetHum.place(x=360, y=230, width=240)
@@ -1268,6 +1275,16 @@ def ChangeStatus():
         statusChange = True
 
 
+def ChangeMode():
+    global modeChange, modeNew, statusIndex, modeIndex
+    if statusIndex == 3:
+        if modeIndex == 2:
+            modeNew = 2
+        else:
+            modeNew = 1
+        modeChange = True
+
+
 def ConnectionErrorWindow():
 
     def Countdown():
@@ -1352,7 +1369,7 @@ os.remove(logfile) if os.path.isfile(logfile) else None
 logging.basicConfig(filename=logfile, level=logging.ERROR)
 
 root = Tk()
-root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.7.5")
+root.title("Модуль удалённого контроля климатической камеры  |  Climcontrol v1.7.6")
 root.geometry("1000x740")
 root.wm_geometry("+%d+%d" % (100, 100))
 root["bg"] = bgGlob
@@ -1414,8 +1431,8 @@ timerTechValue = Label(fg=fgVal, bg=bgLoc)
 
 figure = Figure(figsize=(9.5, 4.2), dpi=100, facecolor=bgLoc)
 canvasGraph = FigureCanvasTkAgg(figure=figure, master=root)
-
 canvasError = tkinter.Canvas(master=root, bg="red", width=100, height=100)
+
 ttk.Style().configure("TButton", font="Helvetica 8", background=bgGlob, relief="sunken", border=0, foreground="blue")
 buttonSaveFig = ttk.Button(command=SaveFigure, style="TButton", text="Сохранить график")
 buttonOpenFig = ttk.Button(command=OpenFigure, style="TButton", text="Открыть график")
@@ -1423,6 +1440,7 @@ buttonOpenHistory = ttk.Button(command=OpenHistory, style="TButton", text="От�
 buttonRename = ttk.Button(command=ChangeName, style="TButton", text="Переименовать")
 buttonAdd = ttk.Button(command=lambda: InputIP(empty=False), style="TButton", text="Добавить / Удалить")
 buttonStatus = ttk.Button(command=ChangeStatus, style="TButton", text="ПУСК / СТОП")
+buttonMode = ttk.Button(command=ChangeMode, style="TButton", text="Термо / Влага")
 buttonSpeed = ttk.Button(style="TButton", text="Активировать контроль скорости", state="disabled")
 buttonSetTemp = ttk.Button(command=ChangeTemperature, style="TButton", text="Сменить уставку по температуре")
 buttonSetHum = ttk.Button(command=ChangeHumidity, style="TButton", text="Сменить уставку по влажности")
